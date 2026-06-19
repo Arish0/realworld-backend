@@ -1,0 +1,7 @@
+{
+  "defaultLender": {
+    "email": "testingsparkout0123@gmail.com",
+    "passwordEnv": "REALWORLD_LENDER_PASSWORD",
+    "offerAmount": "1000"
+  }
+}

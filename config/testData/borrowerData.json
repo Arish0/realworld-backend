@@ -1,0 +1,74 @@
+{
+  "defaultBorrower": {
+    "email": "brooklyn@yopmail.com",
+    "passwordEnv": "REALWORLD_WEB2_PASSWORD"
+  },
+  "loanRequestScenarios": [
+    {
+      "name": "default loan terms",
+      "assetIndex": 0,
+      "submitDefaultValues": true
+    },
+    {
+      "name": "custom no-early-repayment terms",
+      "assetIndex": 0,
+      "loanAmount": "80",
+      "currency": "$RW",
+      "durationDays": 30,
+      "apr": "12",
+      "allowEarlyRepayment": "No"
+    }
+  ],
+  "edgeCases": [
+    {
+      "name": "blank loan amount keeps request guarded by preview",
+      "assetIndex": 0,
+      "loanAmount": "",
+      "expectedSubmitEnabled": true
+    },
+    {
+      "name": "blank apr keeps request guarded by preview",
+      "assetIndex": 0,
+      "apr": "",
+      "expectedSubmitEnabled": true
+    }
+  ],
+  "activeCollateralUpdateScenarios": [
+    {
+      "name": "low amount short duration low APR no early repayment",
+      "loanAmount": "70",
+      "currency": "$RW",
+      "durationDays": 1,
+      "apr": "10",
+      "allowEarlyRepayment": "No",
+      "expectedUpdateEnabled": true
+    },
+    {
+      "name": "mid amount monthly duration medium APR early repayment",
+      "loanAmount": "85",
+      "currency": "$RW",
+      "durationDays": 30,
+      "apr": "15",
+      "allowEarlyRepayment": "Yes",
+      "expectedUpdateEnabled": true
+    },
+    {
+      "name": "high amount long duration high APR no early repayment",
+      "loanAmount": "95",
+      "currency": "$RW",
+      "durationDays": 180,
+      "apr": "20",
+      "allowEarlyRepayment": "No",
+      "expectedUpdateEnabled": true
+    },
+    {
+      "name": "maximum duration boundary with early repayment",
+      "loanAmount": "80",
+      "currency": "$RW",
+      "durationDays": 365,
+      "apr": "25",
+      "allowEarlyRepayment": "Yes",
+      "expectedUpdateEnabled": true
+    }
+  ]
+}

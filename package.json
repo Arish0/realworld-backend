@@ -1,0 +1,24 @@
+{
+  "name": "realworld",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "playwright test",
+    "test:web2": "playwright test tests/web2",
+    "test:web3": "playwright test tests/web3",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report",
+    "realworld:metamask": "node scripts/open-realworld-with-metamask.js",
+    "realworld:connect-wallet": "node scripts/connect-realworld-wallet.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^25.9.1"
+  }
+}

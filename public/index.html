@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Realworld Web3 E2E Test Runner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #020617 100%);
+      --glass-bg: rgba(30, 41, 59, 0.45);
+      --glass-border: rgba(255, 255, 255, 0.08);
+      --primary: #818cf8;
+      --primary-glow: rgba(129, 140, 248, 0.4);
+      --accent: #c084fc;
+      --success: #34d399;
+      --success-glow: rgba(52, 211, 153, 0.3);
+      --danger: #f87171;
+      --danger-glow: rgba(248, 113, 113, 0.3);
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: var(--bg-gradient);
+      color: var(--text);
+      font-family: 'Outfit', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+      overflow-x: hidden;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+      animation: fadeInDown 0.8s ease;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      letter-spacing: -0.05em;
+      background: linear-gradient(to right, var(--primary), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 10px;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+      font-weight: 300;
+    }
+
+    .dashboard {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      width: 100%;
+      max-width: 1200px;
+      animation: fadeInUp 0.8s ease;
+    }
+
+    @media (max-width: 1024px) {
+      .dashboard {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-radius: 20px;
+      padding: 30px;
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+      transition: transform 0.3s ease, border-color 0.3s ease;
+    }
+
+    .card:hover {
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .card-title {
+      font-size: 1.4rem;
+      font-weight: 600;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      padding-bottom: 12px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      font-weight: 500;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="number"],
+    select {
+      width: 100%;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--glass-border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 1rem;
+      outline: none;
+      transition: all 0.3s ease;
+    }
+
+    input:focus, select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 10px var(--primary-glow);
+    }
+
+    .row-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+
+    /* Flows Selector Layout */
+    .flow-options {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 15px;
+      margin-bottom: 25px;
+    }
+
+    .flow-option-card {
+      background: rgba(15, 23, 42, 0.4);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      padding: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      transition: all 0.3s ease;
+    }
+
+    .flow-option-card:hover {
+      background: rgba(129, 140, 248, 0.08);
+      border-color: rgba(129, 140, 248, 0.3);
+    }
+
+    .flow-option-card input[type="radio"] {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--text-muted);
+      border-radius: 50%;
+      outline: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+    }
+
+    .flow-option-card input[type="radio"]::after {
+      content: "";
+      width: 8px;
+      height: 8px;
+      background: var(--primary);
+      border-radius: 50%;
+      transform: scale(0);
+      transition: transform 0.2s ease;
+    }
+
+    .flow-option-card input[type="radio"]:checked {
+      border-color: var(--primary);
+    }
+
+    .flow-option-card input[type="radio"]:checked::after {
+      transform: scale(1);
+    }
+
+    .flow-option-card.selected {
+      border-color: var(--primary);
+      background: rgba(129, 140, 248, 0.12);
+      box-shadow: 0 0 15px rgba(129, 140, 248, 0.15);
+    }
+
+    .flow-info h4 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .flow-info p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    /* Button styles */
+    .controls {
+      display: flex;
+      gap: 15px;
+      margin-top: 25px;
+    }
+
+    button.btn {
+      flex: 1;
+      border: none;
+      border-radius: 12px;
+      padding: 16px;
+      font-family: inherit;
+      font-size: 1.1rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: all 0.3s ease;
+    }
+
+    button.btn-run {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+      color: #fff;
+      box-shadow: 0 4px 15px var(--primary-glow);
+    }
+
+    button.btn-run:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(129, 140, 248, 0.6);
+    }
+
+    button.btn-stop {
+      background: rgba(248, 113, 113, 0.15);
+      border: 1px solid var(--danger);
+      color: var(--danger);
+    }
+
+    button.btn-stop:hover:not(:disabled) {
+      background: var(--danger);
+      color: #fff;
+      box-shadow: 0 4px 15px var(--danger-glow);
+      transform: translateY(-2px);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none !important;
+      box-shadow: none !important;
+    }
+
+    /* Console Panel styling */
+    .console-card {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 500px;
+    }
+
+    .console-status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 15px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      gap: 6px;
+    }
+
+    .badge-idle {
+      background: rgba(148, 163, 184, 0.15);
+      color: var(--text-muted);
+    }
+
+    .badge-running {
+      background: rgba(129, 140, 248, 0.15);
+      color: var(--primary);
+      animation: pulse 1.5s infinite alternate;
+    }
+
+    .badge-success {
+      background: rgba(52, 211, 153, 0.15);
+      color: var(--success);
+    }
+
+    .badge-failed {
+      background: rgba(248, 113, 113, 0.15);
+      color: var(--danger);
+    }
+
+    .iframe-wrapper {
+      flex: 1;
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: #0d1117;
+      min-height: 400px;
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    /* Animations */
+    @keyframes fadeInDown {
+      from { opacity: 0; transform: translateY(-20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes pulse {
+      from { opacity: 0.6; }
+      to { opacity: 1; }
+    }
+
+    /* Conditional config section display */
+    .config-section {
+      transition: all 0.3s ease;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Realworld E2E Test Dashboard</h1>
+    <p class="subtitle">Select flow, configure parameters, and run Playwright test suites dynamically</p>
+  </header>
+
+  <main class="dashboard">
+    <!-- Configuration Card -->
+    <section class="card">
+      <div class="card-title">
+        <span>⚙️</span> E2E Test Runner Configurations
+      </div>
+
+      <form id="configForm">
+        <!-- Flows -->
+        <div class="form-group">
+          <label>Select Test Flow</label>
+          <div class="flow-options">
+            <label class="flow-option-card selected" id="flow-1-card">
+              <input type="radio" name="flow" value="requestLoan" checked onclick="selectFlow('requestLoan')">
+              <div class="flow-info">
+                <h4>1) Request Loan</h4>
+                <p>Borrower requests a loan with dynamic/randomized amount and terms</p>
+              </div>
+            </label>
+
+            <label class="flow-option-card" id="flow-2-card">
+              <input type="radio" name="flow" value="lendLoan" onclick="selectFlow('lendLoan')">
+              <div class="flow-info">
+                <h4>2) Lend Loan</h4>
+                <p>Lender logs in and accepts the first available loan opportunity</p>
+              </div>
+            </label>
+
+            <label class="flow-option-card" id="flow-3-card">
+              <input type="radio" name="flow" value="requestAndLend" onclick="selectFlow('requestAndLend')">
+              <div class="flow-info">
+                <h4>3) Request and Lend Loan</h4>
+                <p>Borrower requests loan; lender logs in and directly accepts the same loan</p>
+              </div>
+            </label>
+
+            <label class="flow-option-card" id="flow-4-card">
+              <input type="radio" name="flow" value="counterRecounter" onclick="selectFlow('counterRecounter')">
+              <div class="flow-info">
+                <h4>4) Counter and Recounter Loan</h4>
+                <p>Borrower & Lender run negotiation loop for customized iterations</p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Credentials -->
+        <div class="form-group" id="credentials-group">
+          <label>Credentials Setup</label>
+          <div class="row-grid">
+            <div class="form-group" id="borrower-email-group">
+              <label style="font-size: 0.75rem;">Borrower Email</label>
+              <input type="text" id="borrowerEmail" value="brooklyn@yopmail.com">
+            </div>
+            <div class="form-group" id="borrower-pass-group">
+              <label style="font-size: 0.75rem;">Borrower Password</label>
+              <input type="password" id="borrowerPassword" value="Test@1233333">
+            </div>
+          </div>
+          <div class="row-grid">
+            <div class="form-group" id="lender-email-group">
+              <label style="font-size: 0.75rem;">Lender Email</label>
+              <input type="text" id="lenderEmail" value="harish@yopmail.com">
+            </div>
+            <div class="form-group" id="lender-pass-group">
+              <label style="font-size: 0.75rem;">Lender Password</label>
+              <input type="password" id="lenderPassword" value="Test@1233333">
+            </div>
+          </div>
+        </div>
+
+        <!-- Parameters Section -->
+        <div id="parameters-section" class="config-section">
+          <div class="card-title" style="font-size: 1.1rem; margin-top: 15px; margin-bottom: 15px;">
+            <span>📊</span> Dynamic Loan Parameters
+          </div>
+          <div class="row-grid">
+            <div class="form-group">
+              <label>Min Loan Amount ($)</label>
+              <input type="number" id="loanAmountMin" value="1000">
+            </div>
+            <div class="form-group">
+              <label>Max Loan Amount ($)</label>
+              <input type="number" id="loanAmountMax" value="5000">
+            </div>
+          </div>
+          <div class="row-grid">
+            <div class="form-group">
+              <label>Min APR (%)</label>
+              <input type="number" id="aprMin" value="10">
+            </div>
+            <div class="form-group">
+              <label>Max APR (%)</label>
+              <input type="number" id="aprMax" value="20">
+            </div>
+          </div>
+          <div class="row-grid">
+            <div class="form-group">
+              <label>Loan Duration</label>
+              <select id="duration">
+                <option value="90">90 Days</option>
+                <option value="30">30 Days</option>
+                <option value="180">180 Days</option>
+                <option value="365">365 Days</option>
+                <option value="random">Random Selection</option>
+              </select>
+            </div>
+            <div class="form-group" id="iterations-group">
+              <label>Negotiation Iterations</label>
+              <input type="number" id="iterations" value="10">
+            </div>
+          </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+          <button type="button" class="btn btn-run" id="runBtn" onclick="runTest()">
+            <span>▶️</span> Run Active Flow
+          </button>
+          <button type="button" class="btn btn-stop" id="stopBtn" disabled onclick="stopTest()">
+            <span>⏹️</span> Terminate Run
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Execution log frame -->
+    <section class="card console-card">
+      <div class="console-status">
+        <div class="card-title" style="margin-bottom: 0; border: none; padding: 0;">
+          <span>🖥️</span> Test execution output log
+        </div>
+        <div id="statusBadge" class="badge badge-idle">
+          <span>●</span> IDLE
+        </div>
+      </div>
+
+      <div class="iframe-wrapper">
+        <iframe id="consoleFrame" src="/console"></iframe>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let isRunning = false;
+
+    function selectFlow(flowName) {
+      // Manage visual selected states of flow option cards
+      document.querySelectorAll('.flow-option-card').forEach(el => el.classList.remove('selected'));
+      
+      const cards = {
+        requestLoan: 'flow-1-card',
+        lendLoan: 'flow-2-card',
+        requestAndLend: 'flow-3-card',
+        counterRecounter: 'flow-4-card'
+      };
+      
+      document.getElementById(cards[flowName]).classList.add('selected');
+
+      // Conditional section hides/shows
+      const paramsSec = document.getElementById('parameters-section');
+      const iterationsGrp = document.getElementById('iterations-group');
+      const credentialsGrp = document.getElementById('credentials-group');
+      const borrowerEmailGrp = document.getElementById('borrower-email-group');
+      const borrowerPassGrp = document.getElementById('borrower-pass-group');
+      const lenderEmailGrp = document.getElementById('lender-email-group');
+      const lenderPassGrp = document.getElementById('lender-pass-group');
+
+      if (flowName === 'lendLoan') {
+        paramsSec.classList.add('hidden');
+        borrowerEmailGrp.classList.add('hidden');
+        borrowerPassGrp.classList.add('hidden');
+        lenderEmailGrp.classList.remove('hidden');
+        lenderPassGrp.classList.remove('hidden');
+      } else if (flowName === 'requestLoan') {
+        paramsSec.classList.remove('hidden');
+        iterationsGrp.classList.add('hidden');
+        borrowerEmailGrp.classList.remove('hidden');
+        borrowerPassGrp.classList.remove('hidden');
+        lenderEmailGrp.classList.add('hidden');
+        lenderPassGrp.classList.add('hidden');
+      } else if (flowName === 'requestAndLend') {
+        paramsSec.classList.remove('hidden');
+        iterationsGrp.classList.add('hidden');
+        borrowerEmailGrp.classList.remove('hidden');
+        borrowerPassGrp.classList.remove('hidden');
+        lenderEmailGrp.classList.remove('hidden');
+        lenderPassGrp.classList.remove('hidden');
+      } else if (flowName === 'counterRecounter') {
+        paramsSec.classList.remove('hidden');
+        iterationsGrp.classList.remove('hidden');
+        borrowerEmailGrp.classList.remove('hidden');
+        borrowerPassGrp.classList.remove('hidden');
+        lenderEmailGrp.classList.remove('hidden');
+        lenderPassGrp.classList.remove('hidden');
+      }
+    }
+
+    // Call initially to apply layout hide/show triggers
+    selectFlow('requestLoan');
+
+    async function runTest() {
+      if (isRunning) return;
+
+      const flow = document.querySelector('input[name="flow"]:checked').value;
+      const borrowerEmail = document.getElementById('borrowerEmail').value;
+      const borrowerPassword = document.getElementById('borrowerPassword').value;
+      const lenderEmail = document.getElementById('lenderEmail').value;
+      const lenderPassword = document.getElementById('lenderPassword').value;
+      const loanAmountMin = parseInt(document.getElementById('loanAmountMin').value, 10);
+      const loanAmountMax = parseInt(document.getElementById('loanAmountMax').value, 10);
+      const aprMin = parseInt(document.getElementById('aprMin').value, 10);
+      const aprMax = parseInt(document.getElementById('aprMax').value, 10);
+      const duration = document.getElementById('duration').value;
+      const iterations = parseInt(document.getElementById('iterations').value, 10);
+
+      const params = {
+        flow,
+        borrowerEmail,
+        borrowerPassword,
+        lenderEmail,
+        lenderPassword,
+        loanAmountMin,
+        loanAmountMax,
+        aprMin,
+        aprMax,
+        duration: isNaN(parseInt(duration, 10)) ? duration : parseInt(duration, 10),
+        iterations
+      };
+
+      try {
+        setRunState(true);
+        // Reload iframe content first
+        document.getElementById('consoleFrame').contentWindow.location.reload();
+
+        const res = await fetch('/run-test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(params)
+        });
+
+        const data = await res.json();
+        if (!data.success) {
+          alert('Error: ' + data.message);
+          setRunState(false);
+        } else {
+          // Monitor logs stream and update badge state
+          monitorLogsStream();
+        }
+      } catch (err) {
+        alert('Failed to initiate test suite: ' + err.message);
+        setRunState(false);
+      }
+    }
+
+    async function stopTest() {
+      try {
+        const res = await fetch('/stop-test', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          setRunState(false);
+          updateStatusBadge('FAILED', 'badge-failed');
+        } else {
+          alert(data.message);
+        }
+      } catch (err) {
+        alert('Error terminating execution: ' + err.message);
+      }
+    }
+
+    function setRunState(running) {
+      isRunning = running;
+      document.getElementById('runBtn').disabled = running;
+      document.getElementById('stopBtn').disabled = !running;
+      
+      if (running) {
+        updateStatusBadge('RUNNING', 'badge-running');
+      } else {
+        updateStatusBadge('IDLE', 'badge-idle');
+      }
+    }
+
+    function updateStatusBadge(text, className) {
+      const badge = document.getElementById('statusBadge');
+      badge.className = 'badge ' + className;
+      badge.innerHTML = `<span>●</span> \${text}`;
+    }
+
+    let source = null;
+    function monitorLogsStream() {
+      if (source) source.close();
+
+      source = new EventSource('/stream-logs');
+      source.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        const text = data.text;
+
+        if (text.includes('=== TEST COMPLETED WITH CODE: 0 ===')) {
+          setRunState(false);
+          updateStatusBadge('SUCCESS', 'badge-success');
+          source.close();
+        } else if (text.includes('=== TEST COMPLETED WITH CODE:') && !text.includes('CODE: 0')) {
+          setRunState(false);
+          updateStatusBadge('FAILED', 'badge-failed');
+          source.close();
+        }
+      };
+      
+      source.onerror = function() {
+        // SSE error or close
+        source.close();
+      };
+    }
+  </script>
+</body>
+</html>
