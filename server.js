@@ -122,11 +122,20 @@ const server = http.createServer((req, res) => {
           REALWORLD_LENDER_PASSWORD: params.lenderPassword || ''
         };
 
-        const args = ['playwright', 'test', specFile, '--headed'];
-        broadcastLog(`Running command: npx ${args.join(' ')}\n`);
-
         const isWin = process.platform === 'win32';
-        const cmd = isWin ? 'npx.cmd' : 'npx';
+        let cmd = '';
+        let args = [];
+        
+        if (isWin) {
+          cmd = 'npx.cmd';
+          args = ['playwright', 'test', specFile, '--headed'];
+        } else {
+          // On Linux (Render), run headed browser inside X virtual framebuffer
+          cmd = 'xvfb-run';
+          args = ['npx', 'playwright', 'test', specFile, '--headed'];
+        }
+        
+        broadcastLog(`Running command: ${isWin ? 'npx' : 'xvfb-run npx'} ${specFile} --headed\n`);
 
         currentProcess = spawn(cmd, args, { env, cwd: __dirname, shell: true });
 

@@ -32,15 +32,20 @@ test.describe('Borrower loan repayment flows', () => {
       }
     });
 
+    const uiConfig = readUiConfig();
+    const borrowerEmailVal = process.env.REALWORLD_WEB2_EMAIL || uiConfig.borrowerEmail || 'brooklyn@yopmail.com';
+    const borrowerPasswordVal = process.env.REALWORLD_WEB2_PASSWORD || uiConfig.borrowerPassword || 'Test@1233333';
+    const lenderEmailVal = process.env.REALWORLD_LENDER_EMAIL || uiConfig.lenderEmail || 'harish@yopmail.com';
+    const lenderPasswordVal = process.env.REALWORLD_LENDER_PASSWORD || uiConfig.lenderPassword || 'Test@1233333';
+
     // 1. Log in borrower and open wallet
-    await loginAndOpenWallet(loginPage, walletPage, page);
+    await loginPage.open();
+    await loginPage.login(borrowerEmailVal, borrowerPasswordVal);
+    await expect(page).toHaveURL(/\/(dashboard|my-wallet)/, { timeout: 30000 });
+    await walletPage.open();
 
     const borrowRequestPage = new BorrowRequestPage(page);
     const borrowerDetailPage = new BorrowerDetailPage(page);
-
-    const uiConfig = readUiConfig();
-    const lenderEmailVal = process.env.REALWORLD_LENDER_EMAIL || uiConfig.lenderEmail || 'harish@yopmail.com';
-    const lenderPasswordVal = lenderEmailVal === 'harish@yopmail.com' ? 'Test@1233333' : (process.env.REALWORLD_LENDER_PASSWORD || uiConfig.lenderPassword || 'Test@1233333');
 
     // Definition of the 6 phases
     const phases = [
