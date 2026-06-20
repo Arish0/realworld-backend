@@ -1,5 +1,5 @@
 # Use the official Playwright Docker image containing pre-installed browsers
-FROM mcr.microsoft.com/playwright:v1.49.0-noble
+FROM mcr.microsoft.com/playwright:v1.60.0-noble
 
 # Install the virtual display, window manager, and VNC/noVNC viewer used by headed mode
 RUN apt-get update && \
@@ -15,8 +15,8 @@ COPY package*.json ./
 # Install Node dependencies
 RUN npm install
 
-# Install Chromium browser binaries via Playwright (matching configuration)
-RUN npx playwright install chromium
+# Install Chromium browser binaries via the same Playwright version used by package-lock
+RUN npx playwright install --with-deps chromium
 
 # Copy all application code
 COPY . .

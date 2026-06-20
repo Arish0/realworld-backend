@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const net = require('net');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 
 let currentProcess = null;
@@ -18,6 +19,12 @@ function stripAnsi(str) {
   return str.replace(ansiRegex, '');
 }
 
+function logSystem(message, details) {
+  const line = `[SYSTEM] ${new Date().toISOString()} ${message}${details ? ` ${JSON.stringify(details)}` : ''}\n`;
+  console.log(line.trim());
+  broadcastLog(line);
+}
+
 function startDisplayProcesses() {
   if (process.platform === 'win32' || displayProcessesStarted) {
     return;
@@ -25,6 +32,7 @@ function startDisplayProcesses() {
 
   displayProcessesStarted = true;
   process.env.DISPLAY = DISPLAY_NUMBER;
+  console.log(`[display] Starting virtual display ${DISPLAY_NUMBER} for headed Chromium`);
 
   const displayCommands = [
     {
@@ -165,7 +173,6 @@ function handleVncWebSocket(req, socket) {
     return;
   }
 
-  const crypto = require('crypto');
   const accept = crypto
     .createHash('sha1')
     .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
@@ -252,6 +259,13 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       try {
         const params = JSON.parse(body);
+        const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        logSystem('Received /run-test request', {
+          requestId,
+          flow: params.flow,
+          platform: process.platform,
+          cwd: __dirname,
+        });
 
         if (currentProcess) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -267,6 +281,7 @@ const server = http.createServer((req, res) => {
         
         // Write uiConfig.json
         fs.writeFileSync(path.join(configDir, 'uiConfig.json'), JSON.stringify(params, null, 2));
+        logSystem('Wrote config/uiConfig.json', { requestId, configPath: path.join(configDir, 'uiConfig.json') });
 
         // Select spec file based on chosen flow
         let specFile = '';
@@ -317,12 +332,21 @@ const server = http.createServer((req, res) => {
           args = ['playwright', 'test', specFile, '--project=chromium', '--headed'];
         }
         
+        logSystem('Starting Playwright process', {
+          requestId,
+          command: 'npx playwright test',
+          specFile,
+          project: 'chromium',
+          headed: true,
+          display: isWin ? 'windows-desktop' : (process.env.DISPLAY || DISPLAY_NUMBER),
+        });
         broadcastLog(`Running command: npx playwright test ${specFile} --project=chromium --headed\n`);
         if (!isWin) {
           broadcastLog(`Live Chromium viewer: /browser\n`);
         }
 
         currentProcess = spawn(cmd, args, { env: { ...env, DISPLAY: process.env.DISPLAY || DISPLAY_NUMBER }, cwd: __dirname, shell: true });
+        logSystem('Playwright child process spawned', { requestId, pid: currentProcess.pid });
 
         currentProcess.stdout.on('data', data => {
           broadcastLog(data.toString());
@@ -333,11 +357,13 @@ const server = http.createServer((req, res) => {
         });
 
         currentProcess.on('error', err => {
+          logSystem('Failed to spawn Playwright', { requestId, message: err.message, stack: err.stack });
           broadcastLog(`[SYSTEM ERROR] Failed to spawn Playwright: ${err.message}\n`);
           currentProcess = null;
         });
 
-        currentProcess.on('close', code => {
+        currentProcess.on('close', (code, signal) => {
+          logSystem('Playwright process completed', { requestId, code, signal });
           broadcastLog(`\n=== TEST COMPLETED WITH CODE: ${code} ===\n`);
           currentProcess = null;
         });
@@ -462,7 +488,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.url && req.url.startsWith('/vnc/')) {
-    const novncRoot = '/usr/share/novnc';
+    const novncRoot = process.env.NOVNC_ROOT || '/usr/share/novnc';
     const requestedPath = decodeURIComponent(req.url.split('?')[0].replace('/vnc/', ''));
     const safePath = path.normalize(requestedPath).replace(/^(\.\.[/\\])+/, '');
     const filePath = path.join(novncRoot, safePath || 'vnc.html');
@@ -512,15 +538,28 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      platform: process.platform,
+      display: process.env.DISPLAY || null,
+      playwrightDisplay: DISPLAY_NUMBER,
+      currentProcessPid: currentProcess?.pid || null,
+    }));
+    return;
+  }
+
   // Not found fallbacks
   res.writeHead(404, { 'Content-Type': 'text/plain' });
   res.end('Endpoint Not Found');
 });
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 startDisplayProcesses();
 server.listen(PORT, () => {
-  console.log(`E2E Dashboard server is running at http://localhost:${PORT}`);
+  console.log(`E2E Dashboard server is running on port ${PORT}`);
 });
 
 server.on('upgrade', (req, socket) => {
