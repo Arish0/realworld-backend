@@ -5,6 +5,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "start": "node server.js",
     "test": "playwright test",
     "test:web2": "playwright test tests/web2",
     "test:web3": "playwright test tests/web3",
