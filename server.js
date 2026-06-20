@@ -7,14 +7,21 @@ let currentProcess = null;
 let logBuffer = [];
 let clients = [];
 
+const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
+
+function stripAnsi(str) {
+  return str.replace(ansiRegex, '');
+}
+
 // Broadcast log line to all connected SSE clients
 function broadcastLog(data) {
-  logBuffer.push(data);
+  const cleanData = stripAnsi(data);
+  logBuffer.push(cleanData);
   if (logBuffer.length > 5000) {
     logBuffer.shift();
   }
   clients.forEach(res => {
-    res.write(`data: ${JSON.stringify({ text: data })}\n\n`);
+    res.write(`data: ${JSON.stringify({ text: cleanData })}\n\n`);
   });
 }
 
@@ -35,7 +42,8 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*'
     });
     
     // Catch-up client with existing logs
@@ -120,7 +128,7 @@ const server = http.createServer((req, res) => {
         const isWin = process.platform === 'win32';
         const cmd = isWin ? 'npx.cmd' : 'npx';
 
-        currentProcess = spawn(cmd, args, { env, cwd: __dirname });
+        currentProcess = spawn(cmd, args, { env, cwd: __dirname, shell: true });
 
         currentProcess.stdout.on('data', data => {
           broadcastLog(data.toString());
@@ -154,7 +162,11 @@ const server = http.createServer((req, res) => {
   // Stop / Terminate Running Test Endpoint
   if (req.method === 'POST' && req.url === '/stop-test') {
     if (currentProcess) {
-      currentProcess.kill();
+      if (process.platform === 'win32') {
+        require('child_process').exec(`taskkill /pid ${currentProcess.pid} /T /F`);
+      } else {
+        currentProcess.kill();
+      }
       broadcastLog('\n=== TEST RUN EXPLICITLY TERMINATED BY USER ===\n');
       currentProcess = null;
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -245,6 +257,27 @@ const server = http.createServer((req, res) => {
         res.end(data);
       }
     });
+    return;
+  }
+
+  // API Sample Data Endpoint
+  if (req.method === 'GET' && req.url === '/api/sample-data') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      status: 'success',
+      message: 'Sample data endpoint. More data structures will be defined later.',
+      timestamp: new Date().toISOString(),
+      sampleData: {
+        scenarios: [
+          { id: 'requestLoan', name: 'Loan Request Cases Update & Cancellation' },
+          { id: 'requestAndLend', name: 'Loan Request & Acceptance' },
+          { id: 'counterRecounter', name: 'Loan Counter/Re-Counter Negotiation' },
+          { id: 'repayment', name: 'Loan Full Repayment (6 Phases)' }
+        ],
+        lenderEmailDefault: 'harish@yopmail.com',
+        borrowerEmailDefault: 'brooklyn@yopmail.com'
+      }
+    }));
     return;
   }
 

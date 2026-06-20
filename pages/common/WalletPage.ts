@@ -6,7 +6,14 @@ export class WalletPage extends BasePage {
   async open(): Promise<void> {
     for (let retry = 0; retry < 5; retry++) {
       try {
-        await this.goto(ROUTES.wallet);
+        const softLink = this.page.locator('a[href="/my-wallet"]').or(this.page.locator('a[routerlink="/my-wallet"]')).first();
+        if (await softLink.isVisible().catch(() => false)) {
+          console.log(`[Wallet] Navigating to wallet softly...`);
+          await softLink.click();
+        } else {
+          console.log(`[Wallet] Soft navigation link not found. Performing hard navigation...`);
+          await this.goto(ROUTES.wallet);
+        }
         await this.waitForAssets({ timeout: 15000 });
         return;
       } catch (e) {

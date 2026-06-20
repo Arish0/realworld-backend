@@ -253,7 +253,9 @@ test.describe('Borrower loan repayment flows', () => {
 
       // --- STEP C: BORROWER REPAYS LOAN ---
       await page.bringToFront();
-      await borrowerDetailPage.open(loanId);
+      await walletPage.open();
+      await walletPage.openNegotiationAssets();
+      await walletPage.openNftCardByName(assetName);
       await borrowerDetailPage.waitForPageLoaded();
 
       if (phase.payMonthlyFirst) {

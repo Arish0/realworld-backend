@@ -2,6 +2,7 @@ import { expect, type Page } from '@playwright/test';
 import { BorrowRequestPage, type LoanRequestOptions } from '../../pages/borrower/BorrowRequestPage';
 import { type WalletPage } from '../../pages/common/WalletPage';
 import { expectBorrowableNft } from './BorrowerWorkflowService';
+import { BorrowerDetailPage } from '../../pages/borrower/BorrowerDetailPage';
 
 export class BorrowService {
   constructor(private readonly page: Page) {}
@@ -216,12 +217,13 @@ export class BorrowService {
 
   async cancelWalletLoanRequest(walletPage: WalletPage, assetName: string): Promise<void> {
     const borrowRequestPage = new BorrowRequestPage(this.page);
+    const borrowerDetailPage = new BorrowerDetailPage(this.page);
 
     await walletPage.open();
     await walletPage.openNegotiationAssets();
     await walletPage.openNftCardByName(assetName);
 
-    await expect(this.page.getByText('Collateral', { exact: true })).toBeVisible();
+    await borrowerDetailPage.waitForPageLoaded();
     await borrowRequestPage.cancelLoanRequest();
     await borrowRequestPage.waitForLoanCancelledSuccess();
     await borrowRequestPage.closeLoanCancelledSuccess();
@@ -230,6 +232,7 @@ export class BorrowService {
 
   async cancelFirstWalletLoanRequestIfPresent(walletPage: WalletPage): Promise<boolean> {
     const borrowRequestPage = new BorrowRequestPage(this.page);
+    const borrowerDetailPage = new BorrowerDetailPage(this.page);
 
     await walletPage.open();
     await walletPage.openNegotiationAssets();
@@ -239,7 +242,7 @@ export class BorrowService {
     }
 
     await walletPage.openNftCard(0);
-    await expect(this.page.getByText('Collateral', { exact: true })).toBeVisible();
+    await borrowerDetailPage.waitForPageLoaded();
     await borrowRequestPage.cancelLoanRequest();
     await borrowRequestPage.waitForLoanCancelledSuccess();
     await borrowRequestPage.closeLoanCancelledSuccess();

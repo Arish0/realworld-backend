@@ -10,19 +10,55 @@ export class BorrowerDetailPage extends BasePage {
     let borrowerLoaded = false;
     for (let retry = 0; retry < 5; retry++) {
       try {
-        // If a connect button is visible, click it to connect the wallet
-        const connectBtn = this.page.locator('[data-testid="connect-wallet"]').or(this.page.getByRole('button', { name: /Connect wallet/i })).first();
-        if (await connectBtn.isVisible().catch(() => false)) {
-          console.log(`[Borrower] Connect button visible on detail page. Clicking to connect...`);
+        const connectBtn = this.page.locator('[data-testid="connect-wallet"]')
+          .or(this.page.getByRole('button', { name: /Connect wallet/i }))
+          .or(this.page.locator('text=Connect Wallet'))
+          .or(this.page.locator('text=Connect wallet'))
+          .filter({ visible: true })
+          .first();
+        
+        let connectBtnVisible = await connectBtn.isVisible().catch(() => false);
+        if (connectBtnVisible) {
+          console.log(`[Borrower] Connect button visible immediately. Clicking...`);
           await connectBtn.click();
           await this.page.waitForTimeout(2000);
+        } else {
+          try {
+            await connectBtn.waitFor({ state: 'visible', timeout: 2000 });
+            console.log(`[Borrower] Connect button appeared after wait. Clicking...`);
+            await connectBtn.click();
+            await this.page.waitForTimeout(2000);
+          } catch (e) {
+            console.log(`[Borrower] Connect button not visible or already connected.`);
+          }
         }
-        await expect(this.page.getByText('Collateral', { exact: true })).toBeVisible({ timeout: 30000 });
+
+        await expect(
+          this.page.getByText('Collateral', { exact: false })
+            .or(this.page.getByText('Appraised Value', { exact: false }))
+            .or(this.page.getByText('Appraisal', { exact: false }))
+            .first()
+        ).toBeVisible({ timeout: 30000 });
         borrowerLoaded = true;
         break;
       } catch (e) {
-        console.log(`Borrower detail page load failed (retry ${retry + 1}/5). Reloading...`);
-        await this.page.reload();
+        console.log(`Borrower detail page load failed (retry ${retry + 1}/5). Navigating to wallet and re-clicking card...`);
+        try {
+          const softLink = this.page.locator('a[href="/my-wallet"]').or(this.page.locator('a[routerlink="/my-wallet"]')).filter({ visible: true }).first();
+          if (await softLink.isVisible().catch(() => false)) {
+            await softLink.click();
+          } else {
+            await this.goto(`https://stagingmarket.realworld.fi/my-wallet`);
+          }
+          await this.page.locator('#cards').waitFor({ state: 'visible', timeout: 15000 });
+          await this.page.getByRole('listitem').filter({ hasText: /^(Live loan|Negotiation)/ }).first().click();
+          await this.page.waitForTimeout(2000);
+          const card = this.page.locator('#cards > div').filter({ has: this.page.locator('h1') }).first();
+          await card.click();
+        } catch (reloadErr) {
+          console.log(`Failed to navigate softly on retry, performing hard page reload as fallback...`);
+          await this.page.reload();
+        }
       }
     }
     if (!borrowerLoaded) {
@@ -136,14 +172,22 @@ export class BorrowerDetailPage extends BasePage {
   }
 
   async repayLoan(): Promise<void> {
-    const repayButton = this.page.locator('button.repay_loan').filter({ visible: true }).first();
+    const repayButton = this.page.locator('button.repay_loan')
+      .or(this.page.getByRole('button', { name: /Pay Full Balance/i }))
+      .or(this.page.locator('button:has-text("Pay Full Balance")'))
+      .filter({ visible: true })
+      .first();
     await expect(repayButton, 'Expected Pay Full Balance button to be visible on borrow details page').toBeVisible({
       timeout: 30000,
     });
     await repayButton.scrollIntoViewIfNeeded();
     await repayButton.click();
 
-    const confirmButton = this.page.locator('button.confirm-btn').filter({ visible: true }).last();
+    const confirmButton = this.page.locator('button.confirm-btn')
+      .or(this.page.getByRole('button', { name: /^Confirm\.?$/i }))
+      .or(this.page.locator('button:has-text("Confirm")'))
+      .filter({ visible: true })
+      .last();
     await expect(confirmButton, 'Expected Confirm button in repayment confirmation modal').toBeVisible({
       timeout: 15000,
     });
@@ -151,14 +195,22 @@ export class BorrowerDetailPage extends BasePage {
   }
 
   async repayMonthlyInterest(): Promise<void> {
-    const payInterestButton = this.page.locator("//button[@class='repay_loan mb-2 bg_btn ng-star-inserted']").first();
+    const payInterestButton = this.page.locator("//button[@class='repay_loan mb-2 bg_btn ng-star-inserted']")
+      .or(this.page.getByRole('button', { name: /Pay Monthly Interest/i }))
+      .or(this.page.locator('button:has-text("Pay Monthly Interest")'))
+      .filter({ visible: true })
+      .first();
     await expect(payInterestButton, 'Expected Pay Monthly Interest button to be visible').toBeVisible({
       timeout: 30000,
     });
     await payInterestButton.scrollIntoViewIfNeeded();
     await payInterestButton.click();
 
-    const confirmButton = this.page.locator('button.confirm-btn').filter({ visible: true }).last();
+    const confirmButton = this.page.locator('button.confirm-btn')
+      .or(this.page.getByRole('button', { name: /^Confirm\.?$/i }))
+      .or(this.page.locator('button:has-text("Confirm")'))
+      .filter({ visible: true })
+      .last();
     await expect(confirmButton, 'Expected Confirm button in monthly repayment modal').toBeVisible({
       timeout: 15000,
     });

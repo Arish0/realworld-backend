@@ -10,14 +10,35 @@ export class LenderDetailPage extends BasePage {
     let lenderLoaded = false;
     for (let retry = 0; retry < 5; retry++) {
       try {
-        // If a connect button is visible, click it to connect the wallet
-        const connectBtn = this.page.locator('[data-testid="connect-wallet"]').or(this.page.getByRole('button', { name: /Connect wallet/i })).first();
-        if (await connectBtn.isVisible().catch(() => false)) {
-          console.log(`[Lender] Connect button visible on detail page. Clicking to connect...`);
+        const connectBtn = this.page.locator('[data-testid="connect-wallet"]')
+          .or(this.page.getByRole('button', { name: /Connect wallet/i }))
+          .or(this.page.locator('text=Connect Wallet'))
+          .or(this.page.locator('text=Connect wallet'))
+          .filter({ visible: true })
+          .first();
+        
+        let connectBtnVisible = await connectBtn.isVisible().catch(() => false);
+        if (connectBtnVisible) {
+          console.log(`[Lender] Connect button visible immediately. Clicking...`);
           await connectBtn.click();
           await this.page.waitForTimeout(2000);
+        } else {
+          try {
+            await connectBtn.waitFor({ state: 'visible', timeout: 2000 });
+            console.log(`[Lender] Connect button appeared after wait. Clicking...`);
+            await connectBtn.click();
+            await this.page.waitForTimeout(2000);
+          } catch (e) {
+            console.log(`[Lender] Connect button not visible or already connected.`);
+          }
         }
-        await expect(this.page.getByText('Collateral', { exact: true })).toBeVisible({ timeout: 30000 });
+
+        await expect(
+          this.page.getByText('Collateral', { exact: false })
+            .or(this.page.getByText('Appraised Value', { exact: false }))
+            .or(this.page.getByText('Appraisal', { exact: false }))
+            .first()
+        ).toBeVisible({ timeout: 30000 });
         lenderLoaded = true;
         break;
       } catch (e) {
