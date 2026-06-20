@@ -12,6 +12,7 @@ let displayProcessesStarted = false;
 
 const DISPLAY_NUMBER = process.env.PLAYWRIGHT_DISPLAY || ':99';
 const VNC_PORT = Number(process.env.VNC_PORT || 5900);
+const ENABLE_BROWSER_VIEWER = process.env.ENABLE_BROWSER_VIEWER === 'true';
 
 const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
 
@@ -25,8 +26,15 @@ function logSystem(message, details) {
   broadcastLog(line);
 }
 
+function memorySnapshot() {
+  const usage = process.memoryUsage();
+  return Object.fromEntries(
+    Object.entries(usage).map(([key, value]) => [key, `${Math.round(value / 1024 / 1024)}MB`]),
+  );
+}
+
 function startDisplayProcesses() {
-  if (process.platform === 'win32' || displayProcessesStarted) {
+  if (!ENABLE_BROWSER_VIEWER || process.platform === 'win32' || displayProcessesStarted) {
     return;
   }
 
@@ -314,6 +322,7 @@ const server = http.createServer((req, res) => {
         // Set environment variables for Playwright
         const env = {
           ...process.env,
+          CI: 'true',
           REALWORLD_WEB2_EMAIL: params.borrowerEmail || '',
           REALWORLD_WEB2_PASSWORD: params.borrowerPassword || '',
           REALWORLD_LENDER_EMAIL: params.lenderEmail || '',
@@ -326,10 +335,10 @@ const server = http.createServer((req, res) => {
         
         if (isWin) {
           cmd = 'npx.cmd';
-          args = ['playwright', 'test', specFile, '--project=chromium', '--headed'];
+          args = ['playwright', 'test', specFile, '--project=chromium', '--workers=1', '--reporter=line'];
         } else {
           cmd = 'npx';
-          args = ['playwright', 'test', specFile, '--project=chromium', '--headed'];
+          args = ['playwright', 'test', specFile, '--project=chromium', '--workers=1', '--reporter=line'];
         }
         
         logSystem('Starting Playwright process', {
@@ -337,16 +346,23 @@ const server = http.createServer((req, res) => {
           command: 'npx playwright test',
           specFile,
           project: 'chromium',
-          headed: true,
-          display: isWin ? 'windows-desktop' : (process.env.DISPLAY || DISPLAY_NUMBER),
+          headless: true,
+          workers: 1,
+          memoryBeforeLaunch: memorySnapshot(),
         });
-        broadcastLog(`Running command: npx playwright test ${specFile} --project=chromium --headed\n`);
-        if (!isWin) {
+        console.log(process.memoryUsage());
+        broadcastLog(`Running command: npx playwright test ${specFile} --project=chromium --workers=1 --reporter=line\n`);
+        if (!isWin && ENABLE_BROWSER_VIEWER) {
           broadcastLog(`Live Chromium viewer: /browser\n`);
         }
 
-        currentProcess = spawn(cmd, args, { env: { ...env, DISPLAY: process.env.DISPLAY || DISPLAY_NUMBER }, cwd: __dirname, shell: true });
-        logSystem('Playwright child process spawned', { requestId, pid: currentProcess.pid });
+        currentProcess = spawn(cmd, args, { env, cwd: __dirname, shell: true });
+        logSystem('Playwright child process spawned', {
+          requestId,
+          pid: currentProcess.pid,
+          memoryAfterLaunch: memorySnapshot(),
+        });
+        console.log(process.memoryUsage());
 
         currentProcess.stdout.on('data', data => {
           broadcastLog(data.toString());
@@ -363,7 +379,7 @@ const server = http.createServer((req, res) => {
         });
 
         currentProcess.on('close', (code, signal) => {
-          logSystem('Playwright process completed', { requestId, code, signal });
+          logSystem('Playwright process completed', { requestId, code, signal, memoryAfterCompletion: memorySnapshot() });
           broadcastLog(`\n=== TEST COMPLETED WITH CODE: ${code} ===\n`);
           currentProcess = null;
         });
@@ -467,6 +483,21 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.url === '/browser') {
+    if (!ENABLE_BROWSER_VIEWER) {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head><meta charset="UTF-8"><title>Browser Viewer Disabled</title></head>
+        <body style="font-family: Arial, sans-serif; background: #111827; color: #f9fafb; padding: 32px;">
+          <h1>Browser viewer disabled</h1>
+          <p>Render is running Playwright in headless low-memory mode. Use logs, traces from a local run, or screenshots from a larger diagnostic build instead.</p>
+        </body>
+        </html>
+      `);
+      return;
+    }
+
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(`
       <!DOCTYPE html>
@@ -547,6 +578,8 @@ const server = http.createServer((req, res) => {
       display: process.env.DISPLAY || null,
       playwrightDisplay: DISPLAY_NUMBER,
       currentProcessPid: currentProcess?.pid || null,
+      memory: memorySnapshot(),
+      browserViewerEnabled: ENABLE_BROWSER_VIEWER,
     }));
     return;
   }
