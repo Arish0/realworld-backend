@@ -1,4 +1,4 @@
-import { test, expect } from '../../fixtures/testFixture';
+﻿import { test, expect } from '../../fixtures/testFixture';
 import { BorrowService } from '../../services/borrower/BorrowService';
 import { loginAndOpenWallet } from '../../services/borrower/BorrowerWorkflowService';
 import { LoginPage } from '../../pages/common/LoginPage';
@@ -119,12 +119,26 @@ test.describe('Borrower loan repayment flows', () => {
         await walletPage.openAvailableAssets();
       }
 
-      const count = await walletPage.borrowableNftCount();
-      console.log(`Found ${count} borrowable NFTs in available assets.`);
+      const initialCount = await walletPage.borrowableNftCount();
+      console.log(`Found ${initialCount} borrowable NFTs in available assets.`);
 
-      for (let i = 0; i < count; i++) {
-        const name = await walletPage.nftName(i);
-        const appraisal = await walletPage.getAppraisal(i).catch(() => 'unknown');
+      for (let i = 0; ; i++) {
+        const refreshedCount = await walletPage.borrowableNftCount();
+        if (i >= refreshedCount) {
+          console.log(`Stopping discovery loop at index ${i}; only ${refreshedCount} borrowable NFTs are currently available after refresh.`);
+          break;
+        }
+
+        let name = '';
+        let appraisal = 'unknown';
+        try {
+          name = await walletPage.nftName(i);
+          appraisal = await walletPage.getAppraisal(i).catch(() => 'unknown');
+        } catch (err: any) {
+          console.log(`Skipping borrowable NFT index ${i}; wallet list changed while reading card: ${err.message}`);
+          break;
+        }
+
         console.log(`Checking NFT "${name}" (Appraisal: "${appraisal}") at index ${i}...`);
         try {
           await walletPage.requestLoanForNft(i);
@@ -307,3 +321,4 @@ test.describe('Borrower loan repayment flows', () => {
     }
   });
 });
+

@@ -333,6 +333,28 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+
+    if (req.method === 'GET' && req.url?.startsWith('/test-logs/')) {
+      const runId = decodeURIComponent(req.url.replace('/test-logs/', ''));
+      const run = getRun(runId);
+      if (!run) {
+        json(res, 404, { success: false, message: 'Unknown run id' });
+        return;
+      }
+
+      const logs = await getRunLogs(run);
+      json(res, 200, {
+        success: true,
+        runId: run.runId,
+        workflowRunId: run.workflowRunId,
+        status: run.status,
+        conclusion: run.conclusion,
+        summary: logs.summary,
+        fullText: logs.fullText.slice(-120000),
+        files: logs.files,
+      });
+      return;
+    }
     if (req.method === 'GET' && req.url?.startsWith('/test-results/')) {
       const runId = decodeURIComponent(req.url.replace('/test-results/', ''));
       const run = getRun(runId);
@@ -384,7 +406,7 @@ const server = http.createServer(async (req, res) => {
         service: 'RealWorld E2E Backend API',
         executionProvider: 'github-actions',
         message: 'Backend API is running. Use the Vercel frontend for the dashboard.',
-        endpoints: ['/health', '/run-test', '/test-status/:runId', '/test-results/:runId'],
+        endpoints: ['/health', '/run-test', '/test-status/:runId', '/test-results/:runId', '/test-logs/:runId'],
       });
       return;
     }
@@ -432,4 +454,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`E2E Dashboard server is running on port ${PORT}`);
 });
+
 

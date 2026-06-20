@@ -1,4 +1,3 @@
-
 {
   "name": "realworld",
   "version": "1.0.0",
@@ -22,5 +21,8 @@
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@types/node": "^25.9.1"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.17"
   }
 }
