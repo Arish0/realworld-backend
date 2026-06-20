@@ -7,7 +7,7 @@ export const walletLocators = {
   nftCards: '#cards > div',
   nftTitle: 'h1',
   availableTab: 'li:has-text("Available")',
-  negotiationTab: 'li:has-text("Negotiation")',
+  negotiationTab: 'li:has-text("Live loan"), li:has-text("Negotiation")',
   firstNftBorrowButton:
     "xpath=//div[@id='cards']//div[1]//div[1]//div[1]//div[2]//div[4]//div[1]//a[1]",
   firstNftSellButton:

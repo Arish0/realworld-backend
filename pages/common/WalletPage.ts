@@ -4,15 +4,38 @@ import { BasePage } from './BasePage';
 
 export class WalletPage extends BasePage {
   async open(): Promise<void> {
-    await this.goto(ROUTES.wallet);
+    for (let retry = 0; retry < 5; retry++) {
+      try {
+        await this.goto(ROUTES.wallet);
+        await this.waitForAssets({ timeout: 15000 });
+        return;
+      } catch (e) {
+        console.log(`Wallet page assets failed to load (retry ${retry + 1}/5). Reloading...`);
+        await this.page.reload();
+      }
+    }
+    throw new Error('Wallet page assets failed to load after 5 attempts');
   }
 
   async connect(): Promise<void> {
     await this.click(walletLocators.connectButton);
   }
 
-  async waitForAssets(): Promise<void> {
-    await this.page.locator(walletLocators.nftCardsContainer).waitFor({ state: 'visible' });
+  async waitForAssets(options?: { timeout?: number }): Promise<void> {
+    try {
+      await this.page.locator(walletLocators.nftCardsContainer).waitFor({ state: 'visible', ...options });
+    } catch (e) {
+      const container = this.page.locator(walletLocators.nftCardsContainer);
+      if ((await container.count()) > 0) {
+        await this.page.waitForTimeout(2000);
+        const cardCount = await this.page.locator(walletLocators.nftCards).count();
+        if (cardCount === 0) {
+          console.log('Wallet assets container is present but empty.');
+          return;
+        }
+      }
+      throw e;
+    }
   }
 
   async nftCount(): Promise<number> {
@@ -53,8 +76,19 @@ export class WalletPage extends BasePage {
 
   async requestLoanForNftByName(assetName: string): Promise<void> {
     await this.openAvailableAssets();
-    const card = this.nftCardByName(assetName);
+    const card = this.borrowableNftCardByName(assetName);
     await card.locator('a').nth(0).click();
+  }
+
+  async requestLoanForNftByNameAndAppraisal(assetName: string, appraisal: string): Promise<void> {
+    await this.openAvailableAssets();
+    const card = this.borrowableNftCardByNameAndAppraisal(assetName, appraisal);
+    await card.locator('a').nth(0).click();
+  }
+
+  async getAppraisal(index: number): Promise<string> {
+    const card = await this.borrowableNftCard(index);
+    return await card.locator('.buying-value h4').innerText();
   }
 
   async openNftCard(index = 0): Promise<void> {
@@ -80,22 +114,60 @@ export class WalletPage extends BasePage {
   }
 
   async openAvailableAssets(): Promise<void> {
-    const availableTab = this.page.getByRole('listitem').filter({ hasText: /^Available/ }).first();
-    if (await availableTab.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await availableTab.click();
+    for (let retry = 0; retry < 5; retry++) {
+      try {
+        const availableTab = this.page.locator(walletLocators.availableTab).first();
+        if (await availableTab.isVisible({ timeout: 5000 }).catch(() => false)) {
+          await availableTab.click();
+        }
+        await this.waitForAssets({ timeout: 15000 });
+        return;
+      } catch (e) {
+        console.log(`Available assets failed to load (retry ${retry + 1}/5). Reloading page...`);
+        await this.page.reload();
+      }
     }
-    await this.waitForAssets();
+    throw new Error('Available assets failed to load after 5 attempts');
   }
 
   async openNegotiationAssets(): Promise<void> {
-    await this.page.getByRole('listitem').filter({ hasText: /^Negotiation/ }).first().click();
-    await this.waitForAssets();
+    for (let retry = 0; retry < 5; retry++) {
+      try {
+        const negotiationTab = this.page.locator(walletLocators.negotiationTab).first();
+        if (await negotiationTab.isVisible({ timeout: 5000 }).catch(() => false)) {
+          await negotiationTab.click();
+        }
+        await this.waitForAssets({ timeout: 15000 });
+        return;
+      } catch (e) {
+        console.log(`Negotiation assets failed to load (retry ${retry + 1}/5). Reloading page...`);
+        await this.page.reload();
+      }
+    }
+    throw new Error('Negotiation assets failed to load after 5 attempts');
   }
 
   private nftCardByName(assetName: string) {
     return this.page
       .locator(walletLocators.nftCards)
       .filter({ has: this.page.locator(walletLocators.nftTitle, { hasText: assetName }) })
+      .first();
+  }
+
+  private borrowableNftCardByName(assetName: string) {
+    return this.page
+      .locator(walletLocators.nftCards)
+      .filter({ has: this.page.locator(walletLocators.nftTitle, { hasText: assetName }) })
+      .filter({ has: this.page.locator('a') })
+      .first();
+  }
+
+  private borrowableNftCardByNameAndAppraisal(assetName: string, appraisal: string) {
+    return this.page
+      .locator(walletLocators.nftCards)
+      .filter({ has: this.page.locator(walletLocators.nftTitle, { hasText: assetName }) })
+      .filter({ hasText: appraisal })
+      .filter({ has: this.page.locator('a') })
       .first();
   }
 

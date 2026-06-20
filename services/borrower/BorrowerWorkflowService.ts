@@ -9,7 +9,6 @@ export async function loginAndOpenWallet(loginPage: LoginPage, walletPage: Walle
   await expect(page).toHaveURL(/\/(dashboard|my-wallet)/, { timeout: 30000 });
 
   await walletPage.open();
-  await walletPage.waitForAssets();
 }
 
 export async function expectBorrowableNft(walletPage: WalletPage): Promise<void> {

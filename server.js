@@ -92,6 +92,9 @@ const server = http.createServer((req, res) => {
           case 'counterRecounter':
             specFile = 'tests/ui/counterRecounterUi.spec.ts';
             break;
+          case 'repayment':
+            specFile = 'tests/repayment/repayment.spec.ts';
+            break;
           default:
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: false, message: 'Invalid flow selected!' }));

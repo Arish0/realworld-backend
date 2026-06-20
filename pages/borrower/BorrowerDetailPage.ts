@@ -127,4 +127,45 @@ export class BorrowerDetailPage extends BasePage {
     await borrowerOkayButton.waitFor({ state: 'visible', timeout: 120000 });
     await borrowerOkayButton.click();
   }
+
+  async repayLoan(): Promise<void> {
+    const repayButton = this.page.locator('button.repay_loan').filter({ visible: true }).first();
+    await expect(repayButton, 'Expected Pay Full Balance button to be visible on borrow details page').toBeVisible({
+      timeout: 30000,
+    });
+    await repayButton.scrollIntoViewIfNeeded();
+    await repayButton.click();
+
+    const confirmButton = this.page.locator('button.confirm-btn').filter({ visible: true }).last();
+    await expect(confirmButton, 'Expected Confirm button in repayment confirmation modal').toBeVisible({
+      timeout: 15000,
+    });
+    await confirmButton.click();
+  }
+
+  async repayMonthlyInterest(): Promise<void> {
+    const payInterestButton = this.page.locator("//button[@class='repay_loan mb-2 bg_btn ng-star-inserted']").first();
+    await expect(payInterestButton, 'Expected Pay Monthly Interest button to be visible').toBeVisible({
+      timeout: 30000,
+    });
+    await payInterestButton.scrollIntoViewIfNeeded();
+    await payInterestButton.click();
+
+    const confirmButton = this.page.locator('button.confirm-btn').filter({ visible: true }).last();
+    await expect(confirmButton, 'Expected Confirm button in monthly repayment modal').toBeVisible({
+      timeout: 15000,
+    });
+    await confirmButton.click();
+  }
+
+  async waitForRepaymentResult(): Promise<boolean> {
+    await this.page.getByRole('button', { name: /Processing/i }).waitFor({ state: 'visible', timeout: 30000 });
+    await this.page.getByRole('button', { name: 'Okay.' }).waitFor({ state: 'visible', timeout: 120000 });
+    return !(await this.page.locator('img[alt="failed"]').isVisible().catch(() => false));
+  }
+
+  async closeRepaymentResult(): Promise<void> {
+    const okayButton = this.page.getByRole('button', { name: 'Okay.' }).filter({ visible: true }).first();
+    await okayButton.click();
+  }
 }
