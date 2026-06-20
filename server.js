@@ -289,7 +289,19 @@ const server = http.createServer((req, res) => {
         
         // Write uiConfig.json
         fs.writeFileSync(path.join(configDir, 'uiConfig.json'), JSON.stringify(params, null, 2));
-        logSystem('Wrote config/uiConfig.json', { requestId, configPath: path.join(configDir, 'uiConfig.json') });
+        logSystem('Wrote config/uiConfig.json', {
+          requestId,
+          configPath: path.join(configDir, 'uiConfig.json'),
+          flow: params.flow,
+          borrowerEmail: params.borrowerEmail,
+          lenderEmail: params.lenderEmail,
+          loanAmountMin: params.loanAmountMin,
+          loanAmountMax: params.loanAmountMax,
+          aprMin: params.aprMin,
+          aprMax: params.aprMax,
+          duration: params.duration,
+          iterations: params.iterations,
+        });
 
         // Select spec file based on chosen flow
         let specFile = '';
@@ -323,11 +335,19 @@ const server = http.createServer((req, res) => {
         const env = {
           ...process.env,
           CI: 'true',
-          REALWORLD_WEB2_EMAIL: params.borrowerEmail || '',
-          REALWORLD_WEB2_PASSWORD: params.borrowerPassword || '',
-          REALWORLD_LENDER_EMAIL: params.lenderEmail || '',
-          REALWORLD_LENDER_PASSWORD: params.lenderPassword || ''
+          REALWORLD_WEB2_EMAIL: params.borrowerEmail || 'brooklyn@yopmail.com',
+          REALWORLD_WEB2_PASSWORD: params.borrowerPassword || 'Test@1233333',
+          REALWORLD_LENDER_EMAIL: params.lenderEmail || 'harish@yopmail.com',
+          REALWORLD_LENDER_PASSWORD: params.lenderPassword || 'Test@1233333'
         };
+
+        logSystem('Prepared Playwright credentials from UI config', {
+          requestId,
+          borrowerEmail: env.REALWORLD_WEB2_EMAIL,
+          lenderEmail: env.REALWORLD_LENDER_EMAIL,
+          borrowerPasswordProvided: Boolean(env.REALWORLD_WEB2_PASSWORD),
+          lenderPasswordProvided: Boolean(env.REALWORLD_LENDER_PASSWORD),
+        });
 
         const isWin = process.platform === 'win32';
         let cmd = '';

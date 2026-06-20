@@ -6,7 +6,7 @@ import { BorrowerDetailPage } from '../../pages/borrower/BorrowerDetailPage';
 import { LenderDetailPage } from '../../pages/lender/LenderDetailPage';
 import { LendingPage } from '../../pages/lender/LendingPage';
 import { BorrowRequestPage } from '../../pages/borrower/BorrowRequestPage';
-import { readUiConfig } from '../../utils/uiConfigHelper';
+import { getApr, getDuration, getLoanAmount, readUiConfig } from '../../utils/uiConfigHelper';
 
 test.describe('Borrower loan repayment flows', () => {
   test('completes 6 phases of repayment sequentially using same NFT', async ({
@@ -37,6 +37,14 @@ test.describe('Borrower loan repayment flows', () => {
     const borrowerPasswordVal = process.env.REALWORLD_WEB2_PASSWORD || uiConfig.borrowerPassword || 'Test@1233333';
     const lenderEmailVal = process.env.REALWORLD_LENDER_EMAIL || uiConfig.lenderEmail || 'harish@yopmail.com';
     const lenderPasswordVal = process.env.REALWORLD_LENDER_PASSWORD || uiConfig.lenderPassword || 'Test@1233333';
+    const configuredLoanAmount = getLoanAmount(1000, 5000);
+    const configuredApr = getApr(10, 20);
+    const configuredDuration = getDuration(90);
+
+    console.log(
+      `[CONFIG] Repayment flow received borrower=${borrowerEmailVal}, lender=${lenderEmailVal}, ` +
+      `amount=${configuredLoanAmount}, apr=${configuredApr}, duration=${configuredDuration}`,
+    );
 
     // 1. Log in borrower and open wallet
     await loginPage.open();
@@ -124,10 +132,10 @@ test.describe('Borrower loan repayment flows', () => {
 
           // Configure loan parameters for Phase 1
           await borrowRequestPage.applyLoanRequestOptions({
-            loanAmount: '80',
+            loanAmount: configuredLoanAmount,
             currency: '$RW',
-            durationDays: 90,
-            apr: '15',
+            durationDays: configuredDuration,
+            apr: configuredApr,
             interestRepayment: 'End of loan',
             allowEarlyRepayment: 'Yes',
           });
@@ -193,10 +201,10 @@ test.describe('Borrower loan repayment flows', () => {
 
         // Configure loan parameters
         await borrowRequestPage.applyLoanRequestOptions({
-          loanAmount: '80',
+          loanAmount: configuredLoanAmount,
           currency: '$RW',
-          durationDays: 90,
-          apr: '15',
+          durationDays: configuredDuration,
+          apr: configuredApr,
           interestRepayment: phase.interestRepayment as any,
           allowEarlyRepayment: phase.earlyRepayment as any,
         });
