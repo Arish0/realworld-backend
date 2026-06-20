@@ -19,6 +19,7 @@ const flowToSpec = {
   repayment: 'tests/repayment/repayment.spec.ts',
 };
 
+//test
 const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
 
 function stripAnsi(str) {
@@ -378,15 +379,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.url === '/' || req.url === '/index.html') {
-      fs.readFile(path.join(__dirname, 'public', 'index.html'), (err, data) => {
-        if (err) {
-          res.writeHead(404, { 'Content-Type': 'text/plain' });
-          res.end('Dashboard HTML file not found!');
-          return;
-        }
-
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(data);
+      json(res, 200, {
+        status: 'ok',
+        service: 'RealWorld E2E Backend API',
+        executionProvider: 'github-actions',
+        message: 'Backend API is running. Use the Vercel frontend for the dashboard.',
+        endpoints: ['/health', '/run-test', '/test-status/:runId', '/test-results/:runId'],
       });
       return;
     }
@@ -434,3 +432,4 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`E2E Dashboard server is running on port ${PORT}`);
 });
+
