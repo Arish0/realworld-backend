@@ -1,9 +1,9 @@
 # Use the official Playwright Docker image containing pre-installed browsers
 FROM mcr.microsoft.com/playwright:v1.49.0-noble
 
-# Install Xvfb (X virtual framebuffer) so headed browser mode can run
+# Install the virtual display, window manager, and VNC/noVNC viewer used by headed mode
 RUN apt-get update && \
-    apt-get install -y xvfb && \
+    apt-get install -y xvfb fluxbox x11vnc novnc && \
     rm -rf /var/lib/apt/lists/*
 
 # Set up app directory

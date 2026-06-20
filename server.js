@@ -1,16 +1,199 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const net = require('net');
 const { spawn } = require('child_process');
 
 let currentProcess = null;
 let logBuffer = [];
 let clients = [];
+let displayProcessesStarted = false;
+
+const DISPLAY_NUMBER = process.env.PLAYWRIGHT_DISPLAY || ':99';
+const VNC_PORT = Number(process.env.VNC_PORT || 5900);
 
 const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
 
 function stripAnsi(str) {
   return str.replace(ansiRegex, '');
+}
+
+function startDisplayProcesses() {
+  if (process.platform === 'win32' || displayProcessesStarted) {
+    return;
+  }
+
+  displayProcessesStarted = true;
+  process.env.DISPLAY = DISPLAY_NUMBER;
+
+  const displayCommands = [
+    {
+      label: 'Xvfb',
+      cmd: 'Xvfb',
+      args: [DISPLAY_NUMBER, '-screen', '0', '1366x768x24', '-ac', '+extension', 'RANDR'],
+    },
+    {
+      label: 'fluxbox',
+      cmd: 'fluxbox',
+      args: [],
+    },
+    {
+      label: 'x11vnc',
+      cmd: 'x11vnc',
+      args: ['-display', DISPLAY_NUMBER, '-forever', '-shared', '-nopw', '-rfbport', String(VNC_PORT)],
+    },
+  ];
+
+  const spawnDisplayCommand = ({ label, cmd, args }) => {
+    const child = spawn(cmd, args, {
+      env: { ...process.env, DISPLAY: DISPLAY_NUMBER },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    child.stdout.on('data', data => console.log(`[${label}] ${data.toString().trim()}`));
+    child.stderr.on('data', data => console.log(`[${label}] ${data.toString().trim()}`));
+    child.on('error', err => console.log(`[${label}] failed to start: ${err.message}`));
+    child.on('close', code => console.log(`[${label}] exited with code ${code}`));
+  };
+
+  spawnDisplayCommand(displayCommands[0]);
+  setTimeout(() => {
+    displayCommands.slice(1).forEach(spawnDisplayCommand);
+  }, 1200);
+}
+
+function serveFile(res, filePath) {
+  fs.readFile(filePath, (err, data) => {
+    if (err) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('File not found');
+      return;
+    }
+
+    const ext = path.extname(filePath).toLowerCase();
+    const contentTypes = {
+      '.css': 'text/css',
+      '.html': 'text/html',
+      '.js': 'application/javascript',
+      '.png': 'image/png',
+      '.svg': 'image/svg+xml',
+      '.wasm': 'application/wasm',
+    };
+
+    res.writeHead(200, { 'Content-Type': contentTypes[ext] || 'application/octet-stream' });
+    res.end(data);
+  });
+}
+
+function encodeWebSocketFrame(data) {
+  const payload = Buffer.isBuffer(data) ? data : Buffer.from(data);
+  const length = payload.length;
+
+  if (length < 126) {
+    return Buffer.concat([Buffer.from([0x82, length]), payload]);
+  }
+
+  if (length < 65536) {
+    const header = Buffer.alloc(4);
+    header[0] = 0x82;
+    header[1] = 126;
+    header.writeUInt16BE(length, 2);
+    return Buffer.concat([header, payload]);
+  }
+
+  const header = Buffer.alloc(10);
+  header[0] = 0x82;
+  header[1] = 127;
+  header.writeBigUInt64BE(BigInt(length), 2);
+  return Buffer.concat([header, payload]);
+}
+
+function decodeWebSocketFrames(buffer, onFrame) {
+  let offset = 0;
+
+  while (offset + 2 <= buffer.length) {
+    const firstByte = buffer[offset];
+    const secondByte = buffer[offset + 1];
+    const opcode = firstByte & 0x0f;
+    let payloadLength = secondByte & 0x7f;
+    let headerLength = 2;
+
+    if (payloadLength === 126) {
+      if (offset + 4 > buffer.length) break;
+      payloadLength = buffer.readUInt16BE(offset + 2);
+      headerLength = 4;
+    } else if (payloadLength === 127) {
+      if (offset + 10 > buffer.length) break;
+      payloadLength = Number(buffer.readBigUInt64BE(offset + 2));
+      headerLength = 10;
+    }
+
+    const masked = Boolean(secondByte & 0x80);
+    const maskLength = masked ? 4 : 0;
+    const frameLength = headerLength + maskLength + payloadLength;
+
+    if (offset + frameLength > buffer.length) break;
+
+    if (opcode === 0x8) {
+      return buffer.subarray(offset + frameLength);
+    }
+
+    const mask = masked ? buffer.subarray(offset + headerLength, offset + headerLength + 4) : null;
+    const payloadStart = offset + headerLength + maskLength;
+    const payload = Buffer.from(buffer.subarray(payloadStart, payloadStart + payloadLength));
+
+    if (mask) {
+      for (let i = 0; i < payload.length; i += 1) {
+        payload[i] ^= mask[i % 4];
+      }
+    }
+
+    if (opcode === 0x2 || opcode === 0x1) {
+      onFrame(payload);
+    }
+
+    offset += frameLength;
+  }
+
+  return buffer.subarray(offset);
+}
+
+function handleVncWebSocket(req, socket) {
+  const key = req.headers['sec-websocket-key'];
+  if (!key) {
+    socket.destroy();
+    return;
+  }
+
+  const crypto = require('crypto');
+  const accept = crypto
+    .createHash('sha1')
+    .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+    .digest('base64');
+
+  socket.write([
+    'HTTP/1.1 101 Switching Protocols',
+    'Upgrade: websocket',
+    'Connection: Upgrade',
+    `Sec-WebSocket-Accept: ${accept}`,
+    req.headers['sec-websocket-protocol']?.includes('binary') ? 'Sec-WebSocket-Protocol: binary' : '',
+    '',
+    '',
+  ].filter(Boolean).join('\r\n') + '\r\n\r\n');
+
+  const vnc = net.createConnection({ host: '127.0.0.1', port: VNC_PORT });
+  let pending = Buffer.alloc(0);
+
+  socket.on('data', data => {
+    pending = Buffer.concat([pending, data]);
+    pending = decodeWebSocketFrames(pending, frame => vnc.write(frame));
+  });
+
+  vnc.on('data', data => socket.write(encodeWebSocketFrame(data)));
+  vnc.on('error', () => socket.destroy());
+  vnc.on('close', () => socket.destroy());
+  socket.on('close', () => vnc.destroy());
+  socket.on('error', () => vnc.destroy());
 }
 
 // Broadcast log line to all connected SSE clients
@@ -128,16 +311,18 @@ const server = http.createServer((req, res) => {
         
         if (isWin) {
           cmd = 'npx.cmd';
-          args = ['playwright', 'test', specFile, '--headed'];
+          args = ['playwright', 'test', specFile, '--project=chromium', '--headed'];
         } else {
-          // On Linux (Render), run headed browser inside X virtual framebuffer
-          cmd = 'xvfb-run';
-          args = ['npx', 'playwright', 'test', specFile, '--headed'];
+          cmd = 'npx';
+          args = ['playwright', 'test', specFile, '--project=chromium', '--headed'];
         }
         
-        broadcastLog(`Running command: ${isWin ? 'npx' : 'xvfb-run npx'} ${specFile} --headed\n`);
+        broadcastLog(`Running command: npx playwright test ${specFile} --project=chromium --headed\n`);
+        if (!isWin) {
+          broadcastLog(`Live Chromium viewer: /browser\n`);
+        }
 
-        currentProcess = spawn(cmd, args, { env, cwd: __dirname, shell: true });
+        currentProcess = spawn(cmd, args, { env: { ...env, DISPLAY: process.env.DISPLAY || DISPLAY_NUMBER }, cwd: __dirname, shell: true });
 
         currentProcess.stdout.on('data', data => {
           broadcastLog(data.toString());
@@ -255,6 +440,43 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.url === '/browser') {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <title>Live Chromium</title>
+        <style>
+          html, body { margin: 0; height: 100%; background: #111827; }
+          iframe { width: 100%; height: 100%; border: 0; display: block; }
+        </style>
+      </head>
+      <body>
+        <iframe src="/vnc/vnc.html?autoconnect=true&resize=scale&path=websockify"></iframe>
+      </body>
+      </html>
+    `);
+    return;
+  }
+
+  if (req.url && req.url.startsWith('/vnc/')) {
+    const novncRoot = '/usr/share/novnc';
+    const requestedPath = decodeURIComponent(req.url.split('?')[0].replace('/vnc/', ''));
+    const safePath = path.normalize(requestedPath).replace(/^(\.\.[/\\])+/, '');
+    const filePath = path.join(novncRoot, safePath || 'vnc.html');
+
+    if (!filePath.startsWith(novncRoot)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Forbidden');
+      return;
+    }
+
+    serveFile(res, filePath);
+    return;
+  }
+
   // Serving main index.html dashboard
   if (req.url === '/' || req.url === '/index.html') {
     fs.readFile(path.join(__dirname, 'public', 'index.html'), (err, data) => {
@@ -296,6 +518,16 @@ const server = http.createServer((req, res) => {
 });
 
 const PORT = 3000;
+startDisplayProcesses();
 server.listen(PORT, () => {
   console.log(`E2E Dashboard server is running at http://localhost:${PORT}`);
+});
+
+server.on('upgrade', (req, socket) => {
+  if (req.url === '/websockify') {
+    handleVncWebSocket(req, socket);
+    return;
+  }
+
+  socket.destroy();
 });
