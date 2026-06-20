@@ -10,6 +10,13 @@ export class BorrowerDetailPage extends BasePage {
     let borrowerLoaded = false;
     for (let retry = 0; retry < 5; retry++) {
       try {
+        // If a connect button is visible, click it to connect the wallet
+        const connectBtn = this.page.locator('[data-testid="connect-wallet"]').or(this.page.getByRole('button', { name: /Connect wallet/i })).first();
+        if (await connectBtn.isVisible().catch(() => false)) {
+          console.log(`[Borrower] Connect button visible on detail page. Clicking to connect...`);
+          await connectBtn.click();
+          await this.page.waitForTimeout(2000);
+        }
         await expect(this.page.getByText('Collateral', { exact: true })).toBeVisible({ timeout: 30000 });
         borrowerLoaded = true;
         break;
