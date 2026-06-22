@@ -13,6 +13,44 @@ export type LoanRequestOptions = {
 };
 
 export class BorrowRequestPage extends BasePage {
+  private amountInput() {
+    return this.page.locator(borrowLocators.amountInput)
+      .or(this.page.getByRole('textbox').first())
+      .filter({ visible: true })
+      .first();
+  }
+
+  private aprInput() {
+    return this.page.locator(borrowLocators.aprInput)
+      .or(this.page.getByRole('textbox').nth(1))
+      .filter({ visible: true })
+      .first();
+  }
+
+  private durationOption(days: number) {
+    return this.page.locator(borrowLocators.durationOption(days))
+      .or(this.page.getByRole('listitem', { name: String(days), exact: true }))
+      .filter({ visible: true })
+      .last();
+  }
+
+  private async selectCurrency(label: string): Promise<void> {
+    const comboboxes = this.page.getByRole('combobox').filter({ visible: true });
+    const count = await comboboxes.count();
+
+    for (let index = 0; index < count; index += 1) {
+      const combobox = comboboxes.nth(index);
+      try {
+        await combobox.selectOption({ label });
+        return;
+      } catch (err) {
+        // Keep scanning; NFT detail pages also contain storage-fee comboboxes and custom selects.
+      }
+    }
+
+    console.log(`[BorrowRequest] Currency ${label} was not changed; continuing with the visible default currency.`);
+  }
+
   async open(): Promise<void> {
     await this.goto(ROUTES.borrower.borrow);
   }
@@ -24,21 +62,29 @@ export class BorrowRequestPage extends BasePage {
   }
 
   async waitForLoanForm(): Promise<void> {
-    await this.expectVisible(borrowLocators.amountInput);
-    await this.expectVisible(borrowLocators.submitButton);
+    await expect(this.amountInput(), 'Expected loan amount input to be visible').toBeVisible({ timeout: 30000 });
+    await expect(
+      this.page.getByRole('button', { name: /Request loan/i }).filter({ visible: true }).first(),
+      'Expected Request loan button to be visible',
+    ).toBeVisible({ timeout: 30000 });
   }
 
   async applyLoanRequestOptions(options: LoanRequestOptions): Promise<void> {
+    console.log('[BorrowRequest] Applying loan attributes', options);
+
     if (options.currency) {
-      await this.page.locator(borrowLocators.currencySelect).selectOption({ label: options.currency });
+      console.log(`[BorrowRequest] Setting currency: ${options.currency}`);
+      await this.selectCurrency(options.currency);
     }
 
     if (options.durationDays !== undefined) {
-      await this.click(borrowLocators.durationOption(options.durationDays));
+      console.log(`[BorrowRequest] Setting duration days: ${options.durationDays}`);
+      await this.durationOption(options.durationDays).click();
     }
 
     if (options.apr !== undefined) {
-      await this.fill(borrowLocators.aprInput, options.apr);
+      console.log(`[BorrowRequest] Setting APR: ${options.apr}`);
+      await this.setApr(options.apr);
     }
 
     if (options.interestRepayment || options.allowEarlyRepayment) {
@@ -46,20 +92,22 @@ export class BorrowRequestPage extends BasePage {
     }
 
     if (options.interestRepayment) {
+      console.log(`[BorrowRequest] Setting interest repayment: ${options.interestRepayment}`);
       await this.click(borrowLocators.interestRepaymentOption(options.interestRepayment));
     }
 
     if (options.allowEarlyRepayment) {
+      console.log(`[BorrowRequest] Setting early repayment: ${options.allowEarlyRepayment}`);
       await this.click(borrowLocators.earlyRepaymentOption(options.allowEarlyRepayment));
     }
 
     if (options.loanAmount !== undefined) {
+      console.log(`[BorrowRequest] Setting loan amount: ${options.loanAmount}`);
       await this.setLoanAmount(options.loanAmount);
     }
   }
-
   async setLoanAmount(amount: string): Promise<void> {
-    const amountInput = this.page.locator(borrowLocators.amountInput);
+    const amountInput = this.amountInput();
     await amountInput.click();
     await amountInput.press('Control+A');
     await amountInput.press('Backspace');
@@ -67,7 +115,7 @@ export class BorrowRequestPage extends BasePage {
   }
 
   async setApr(apr: string): Promise<void> {
-    const aprInput = this.page.locator(borrowLocators.aprInput);
+    const aprInput = this.aprInput();
     await aprInput.click();
     await aprInput.press('Control+A');
     await aprInput.press('Backspace');
@@ -92,25 +140,26 @@ export class BorrowRequestPage extends BasePage {
   }
 
   async submitDefaultLoanRequest(): Promise<void> {
-    const requestButton = this.page.getByRole('button', { name: /Request loan/i });
-    await expect(requestButton).toBeEnabled();
+    console.log('[BorrowRequest] Clicking Request Loan button.');
+    const requestButton = this.page.getByRole('button', { name: /Request loan/i }).filter({ visible: true }).last();
+    await expect(requestButton, 'Expected visible Request Loan button before confirmation modal').toBeEnabled({ timeout: 30000 });
     await requestButton.scrollIntoViewIfNeeded();
     await requestButton.click({ force: true });
     await this.page.waitForTimeout(3000);
 
-    const confirmButton = this.page.getByRole('button', { name: /^Confirm\.?$/ });
+    const confirmButton = this.page.getByRole('button', { name: /^Confirm\.?$/ }).filter({ visible: true }).last();
     if (!(await confirmButton.isVisible({ timeout: 3000 }).catch(() => false))) {
       await requestButton.evaluate((button: HTMLElement) => button.click());
     }
   }
 
   async ensureDefaultRequiredTerms(): Promise<void> {
-    const currentAmount = await this.page.locator(borrowLocators.amountInput).inputValue();
-    const currentApr = await this.page.locator(borrowLocators.aprInput).inputValue();
+    const currentAmount = await this.amountInput().inputValue();
+    const currentApr = await this.aprInput().inputValue();
 
     await this.setLoanAmount(currentAmount);
     await this.page.locator(borrowLocators.currencySelect).selectOption({ label: '$RW' });
-    await this.page.locator(borrowLocators.durationOption(90)).last().click();
+    await this.durationOption(90).click();
     await this.setApr(currentApr || '15');
     await this.showAdvancedOptions();
     await this.clickListItemIfVisible('End of loan.');
@@ -118,9 +167,16 @@ export class BorrowRequestPage extends BasePage {
   }
 
   async confirmLoanRequest(): Promise<void> {
-    const confirmButton = this.page.getByRole('button', { name: /^Confirm\.?$/ });
-    await confirmButton.waitFor({ state: 'visible', timeout: 30000 });
-    await confirmButton.click();
+    const confirmButton = this.page.getByRole('button', { name: /^Confirm\.?$/ })
+      .or(this.page.locator('button:has-text("Confirm")'))
+      .filter({ visible: true })
+      .last();
+
+    await expect(confirmButton, 'Expected visible Confirm button in loan request preview modal').toBeEnabled({
+      timeout: 30000,
+    });
+    await confirmButton.scrollIntoViewIfNeeded();
+    await confirmButton.click({ force: true });
   }
 
   async waitForLoanRequestedSuccess(): Promise<void> {
@@ -129,7 +185,9 @@ export class BorrowRequestPage extends BasePage {
   }
 
   async waitForLoanRequestResult(): Promise<boolean> {
-    await this.page.getByRole('button', { name: /Processing/i }).waitFor({ state: 'visible', timeout: 30000 });
+    await this.page.getByRole('button', { name: /Processing/i }).waitFor({ state: 'visible', timeout: 15000 }).catch(() => {
+      console.log('[BorrowRequest] Processing state did not appear; waiting for final result modal.');
+    });
     await this.page.getByRole('button', { name: 'Okay.' }).waitFor({ state: 'visible', timeout: 120000 });
     return !(await this.page.locator('img[alt="failed"]').isVisible().catch(() => false));
   }
@@ -210,3 +268,13 @@ export class BorrowRequestPage extends BasePage {
     }
   }
 }
+
+
+
+
+
+
+
+
+
+

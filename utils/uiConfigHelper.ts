@@ -15,6 +15,7 @@ export interface UiConfig {
   interestRepayment?: 'End of loan.' | 'Monthly.' | 'random';
   allowEarlyRepayment?: 'Yes.' | 'No.' | 'random';
   iterations?: number;
+  nftId?: string;
 }
 
 export function readUiConfig(): UiConfig {
@@ -79,3 +80,5 @@ export function getIterations(defaultVal = 10): number {
   const config = readUiConfig();
   return typeof config.iterations === 'number' ? config.iterations : defaultVal;
 }
+
+

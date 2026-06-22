@@ -1,4 +1,4 @@
-﻿const http = require('http');
+const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
@@ -123,6 +123,7 @@ function sanitizeConfig(params) {
     aprMax: params.aprMax,
     duration: params.duration,
     iterations: params.iterations,
+    nftId: params.nftId,
   };
 }
 
@@ -454,5 +455,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`E2E Dashboard server is running on port ${PORT}`);
 });
+
+
 
 

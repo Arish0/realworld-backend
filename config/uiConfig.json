@@ -1,12 +1,15 @@
 {
-  "flow": "repayment",
-  "borrowerEmail": "brooklyn@yopmail.com",
-  "borrowerPassword": "Test@1233333",
-  "lenderEmail": "harish@yopmail.com",
-  "lenderPassword": "Test@1233333",
-  "loanAmountMin": 1000,
-  "loanAmountMax": 5000,
-  "aprMin": 10,
-  "aprMax": 20,
-  "duration": 90
+    "flow":  "repayment",
+    "borrowerEmail":  "brooklyn@yopmail.com",
+    "borrowerPassword":  "Test@1233333",
+    "lenderEmail":  "harish@yopmail.com",
+    "lenderPassword":  "Test@1233333",
+    "loanAmountMin":  1000,
+    "loanAmountMax":  5000,
+    "aprMin":  10,
+    "aprMax":  20,
+    "duration":  90,
+    "nftId":  "0x1c71388e4f5089926fF153F7635F81C4F1676fCb/6"
 }
+
+
