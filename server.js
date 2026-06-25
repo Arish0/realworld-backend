@@ -227,8 +227,75 @@ async function cancelRun(run) {
   return run;
 }
 
+async function getRunLogs(run) {
+  if (!run.workflowRunId) {
+    return { summary: 'Queueing...', fullText: 'Waiting for workflow run to start...', files: [] };
+  }
+  
+  try {
+    const data = await githubRequest(repoPath(`/actions/runs/${run.workflowRunId}/jobs`));
+    const jobs = data.jobs || [];
+    let fullText = '';
+    let summary = '';
+    
+    if (jobs.length > 0) {
+      const jobId = jobs[0].id;
+      const response = await fetch(`${GITHUB_API}${repoPath(`/actions/jobs/${jobId}/logs`)}`, {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+          'User-Agent': 'realworld-e2e-runner',
+          'X-GitHub-Api-Version': '2022-11-28',
+        }
+      });
+      if (response.ok) {
+        fullText = await response.text();
+        const lines = fullText.split('\n');
+        const cleanLines = lines.map(line => stripAnsi(line));
+        fullText = cleanLines.join('\n');
+        summary = cleanLines.slice(-20).join('\n');
+      } else {
+        fullText = `Could not fetch logs from GitHub (Job ID: ${jobId}). Status: ${response.status}`;
+      }
+    } else {
+      fullText = 'No jobs found for this run yet.';
+    }
+    
+    return {
+      summary: summary || 'Initializing runner...',
+      fullText: fullText || 'No logs available yet.',
+      files: [],
+    };
+  } catch (err) {
+    console.error('Error fetching logs:', err);
+    return {
+      summary: 'Error fetching logs',
+      fullText: `Failed to retrieve logs from GitHub: ${err.message}`,
+      files: [],
+    };
+  }
+}
+
 function getRun(runId) {
-  return testRuns.get(runId) || [...testRuns.values()].find(run => String(run.workflowRunId) === String(runId));
+  let run = testRuns.get(runId) || [...testRuns.values()].find(run => String(run.workflowRunId) === String(runId));
+  if (!run && /^\d+$/.test(runId)) {
+    console.log(`[RECOVERY] Recreating run object dynamically for GitHub run ID: ${runId}`);
+    run = {
+      runId: runId,
+      trackingId: `recovered-${runId}`,
+      workflowRunId: Number(runId),
+      status: 'queued',
+      conclusion: null,
+      flow: 'repayment',
+      specFile: 'tests/repayment/repayment.spec.ts',
+      uiConfig: {},
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      artifacts: [],
+    };
+    testRuns.set(run.trackingId, run);
+  }
+  return run;
 }
 
 const server = http.createServer(async (req, res) => {
