@@ -43,6 +43,22 @@ export class LoginPage extends BasePage {
     }
 
     console.log(`[LOGIN] Authenticated ${email} with /auth/me status ${response.status()}`);
+    try {
+      const bodyText = await response.text().catch(() => '');
+      console.log(`[LOGIN] /auth/me response body: ${bodyText}`);
+      if (bodyText) {
+        const data = JSON.parse(bodyText);
+        const actualEmail = data.email || data.user?.email || data.data?.email || data.data?.user?.email;
+        if (actualEmail && actualEmail.toLowerCase() !== email.toLowerCase()) {
+          throw new Error(`Auth mismatch: /auth/me returned user "${actualEmail}", but expected login was "${email}"`);
+        }
+      }
+    } catch (e: any) {
+      console.log(`[LOGIN] Profile email verification info: ${e.message || e}`);
+      if (e.message && e.message.includes('Auth mismatch')) {
+        throw e;
+      }
+    }
   }
 
   async goToWallet(): Promise<WalletPage> {

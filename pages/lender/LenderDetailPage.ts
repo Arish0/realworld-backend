@@ -7,43 +7,97 @@ export class LenderDetailPage extends BasePage {
   }
 
   async waitForPageLoaded(): Promise<void> {
+    const loanUrl = this.page.url();
     let lenderLoaded = false;
     for (let retry = 0; retry < 5; retry++) {
       try {
         const connectBtn = this.page.locator('[data-testid="connect-wallet"]')
           .or(this.page.getByRole('button', { name: /Connect wallet/i }))
           .or(this.page.locator('text=Connect Wallet'))
-          .or(this.page.locator('text=Connect wallet'))
-          .filter({ visible: true })
-          .first();
-        
-        let connectBtnVisible = await connectBtn.isVisible().catch(() => false);
-        if (connectBtnVisible) {
-          console.log(`[Lender] Connect button visible immediately. Clicking...`);
-          await connectBtn.click();
+          .or(this.page.locator('text=Connect wallet'));
+
+        const contentSelectors = [
+          this.page.getByText('Loan request terms', { exact: false }),
+          this.page.getByText('Loan details', { exact: false }),
+          this.page.getByText('Collateral', { exact: false }),
+          this.page.getByText('Appraisal', { exact: false }),
+          this.page.getByText('Appraised Value', { exact: false }),
+        ];
+
+        // Wait up to 45s for either to be visible
+        let found = false;
+        let visibleContentLocator = null;
+        for (let sec = 0; sec < 45; sec++) {
+          if (await connectBtn.first().isVisible().catch(() => false)) {
+            found = true;
+            break;
+          }
+
+          for (const locator of contentSelectors) {
+            const visibleInstance = locator.filter({ visible: true }).first();
+            if (await visibleInstance.isVisible().catch(() => false)) {
+              found = true;
+              visibleContentLocator = visibleInstance;
+              break;
+            }
+          }
+
+          if (found) {
+            break;
+          }
+          await this.page.waitForTimeout(1000);
+        }
+
+        if (!found) {
+          throw new Error('Neither connect wallet button nor page content became visible');
+        }
+
+        if (await connectBtn.first().isVisible().catch(() => false)) {
+          console.log(`[Lender] Connect button visible. Clicking...`);
+          await connectBtn.first().click();
           await this.page.waitForTimeout(2000);
+        }
+
+        if (visibleContentLocator) {
+          await expect(visibleContentLocator).toBeVisible({ timeout: 15000 });
         } else {
-          try {
-            await connectBtn.waitFor({ state: 'visible', timeout: 2000 });
-            console.log(`[Lender] Connect button appeared after wait. Clicking...`);
-            await connectBtn.click();
-            await this.page.waitForTimeout(2000);
-          } catch (e) {
-            console.log(`[Lender] Connect button not visible or already connected.`);
+          // If we connected the wallet, wait for one of the main indicators to load
+          let contentAppeared = false;
+          for (let sec = 0; sec < 15; sec++) {
+            for (const locator of contentSelectors) {
+              const visibleInstance = locator.filter({ visible: true }).first();
+              if (await visibleInstance.isVisible().catch(() => false)) {
+                contentAppeared = true;
+                break;
+              }
+            }
+            if (contentAppeared) break;
+            await this.page.waitForTimeout(1000);
+          }
+          if (!contentAppeared) {
+            throw new Error('Page content did not load after connecting wallet');
           }
         }
 
-        await expect(
-          this.page.getByText('Collateral', { exact: false })
-            .or(this.page.getByText('Appraised Value', { exact: false }))
-            .or(this.page.getByText('Appraisal', { exact: false }))
-            .first()
-        ).toBeVisible({ timeout: 30000 });
         lenderLoaded = true;
         break;
       } catch (e) {
-        console.log(`Lender detail page load failed (retry ${retry + 1}/5). Reloading...`);
-        await this.page.reload();
+        console.log(`Lender detail page load failed (retry ${retry + 1}/5). Saving screenshot...`);
+        try {
+          await this.page.screenshot({ path: `screenshots/lender_detail_fail_retry_${retry + 1}.png`, fullPage: true });
+        } catch (screenshotErr) {
+          console.log(`Failed to take screenshot: ${screenshotErr}`);
+        }
+        
+        // If we were redirected away from the lender detail page, navigate back
+        const currentUrl = this.page.url();
+        if (!currentUrl.includes('/lending-detail/')) {
+          console.log(`[Lender] Redirected away from lender detail page to ${currentUrl}. Navigating back to ${loanUrl}...`);
+          await this.page.goto(loanUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+        } else {
+          console.log(`[Lender] Still on lender detail page. Performing reload...`);
+          await this.page.reload().catch(() => {});
+        }
       }
     }
     if (!lenderLoaded) {

@@ -7,57 +7,97 @@ export class BorrowerDetailPage extends BasePage {
   }
 
   async waitForPageLoaded(): Promise<void> {
+    const loanUrl = this.page.url();
     let borrowerLoaded = false;
     for (let retry = 0; retry < 5; retry++) {
       try {
         const connectBtn = this.page.locator('[data-testid="connect-wallet"]')
           .or(this.page.getByRole('button', { name: /Connect wallet/i }))
           .or(this.page.locator('text=Connect Wallet'))
-          .or(this.page.locator('text=Connect wallet'))
-          .filter({ visible: true })
-          .first();
-        
-        let connectBtnVisible = await connectBtn.isVisible().catch(() => false);
-        if (connectBtnVisible) {
-          console.log(`[Borrower] Connect button visible immediately. Clicking...`);
-          await connectBtn.click();
+          .or(this.page.locator('text=Connect wallet'));
+
+        const contentSelectors = [
+          this.page.getByText('Loan request terms', { exact: false }),
+          this.page.getByText('Loan details', { exact: false }),
+          this.page.getByText('Collateral', { exact: false }),
+          this.page.getByText('Appraisal', { exact: false }),
+          this.page.getByText('Negotiation', { exact: false }),
+          this.page.getByText('Terms.', { exact: false }),
+        ];
+
+        // Wait up to 45s for either to be visible
+        let found = false;
+        let visibleContentLocator = null;
+        for (let sec = 0; sec < 45; sec++) {
+          if (await connectBtn.first().isVisible().catch(() => false)) {
+            found = true;
+            break;
+          }
+
+          for (const locator of contentSelectors) {
+            const visibleInstance = locator.filter({ visible: true }).first();
+            if (await visibleInstance.isVisible().catch(() => false)) {
+              found = true;
+              visibleContentLocator = visibleInstance;
+              break;
+            }
+          }
+
+          if (found) {
+            break;
+          }
+          await this.page.waitForTimeout(1000);
+        }
+
+        if (!found) {
+          throw new Error('Neither connect wallet button nor page content became visible');
+        }
+
+        if (await connectBtn.first().isVisible().catch(() => false)) {
+          console.log(`[Borrower] Connect button visible. Clicking...`);
+          await connectBtn.first().click();
           await this.page.waitForTimeout(2000);
+        }
+
+        if (visibleContentLocator) {
+          await expect(visibleContentLocator).toBeVisible({ timeout: 15000 });
         } else {
-          try {
-            await connectBtn.waitFor({ state: 'visible', timeout: 2000 });
-            console.log(`[Borrower] Connect button appeared after wait. Clicking...`);
-            await connectBtn.click();
-            await this.page.waitForTimeout(2000);
-          } catch (e) {
-            console.log(`[Borrower] Connect button not visible or already connected.`);
+          // If we connected the wallet, wait for one of the main indicators to load
+          let contentAppeared = false;
+          for (let sec = 0; sec < 15; sec++) {
+            for (const locator of contentSelectors) {
+              const visibleInstance = locator.filter({ visible: true }).first();
+              if (await visibleInstance.isVisible().catch(() => false)) {
+                contentAppeared = true;
+                break;
+              }
+            }
+            if (contentAppeared) break;
+            await this.page.waitForTimeout(1000);
+          }
+          if (!contentAppeared) {
+            throw new Error('Page content did not load after connecting wallet');
           }
         }
 
-        await expect(
-          this.page.getByText('Collateral', { exact: false })
-            .or(this.page.getByText('Appraised Value', { exact: false }))
-            .or(this.page.getByText('Appraisal', { exact: false }))
-            .first()
-        ).toBeVisible({ timeout: 30000 });
         borrowerLoaded = true;
         break;
       } catch (e) {
-        console.log(`Borrower detail page load failed (retry ${retry + 1}/5). Navigating to wallet and re-clicking card...`);
+        console.log(`Borrower detail page load failed (retry ${retry + 1}/5). Saving screenshot...`);
         try {
-          const softLink = this.page.locator('a[href="/my-wallet"]').or(this.page.locator('a[routerlink="/my-wallet"]')).filter({ visible: true }).first();
-          if (await softLink.isVisible().catch(() => false)) {
-            await softLink.click();
-          } else {
-            await this.goto(`https://stagingmarket.realworld.fi/my-wallet`);
-          }
-          await this.page.locator('#cards').waitFor({ state: 'visible', timeout: 15000 });
-          await this.page.getByRole('listitem').filter({ hasText: /^(Live loan|Negotiation)/ }).first().click();
-          await this.page.waitForTimeout(2000);
-          const card = this.page.locator('#cards > div').filter({ has: this.page.locator('h1') }).first();
-          await card.click();
-        } catch (reloadErr) {
-          console.log(`Failed to navigate softly on retry, performing hard page reload as fallback...`);
-          await this.page.reload();
+          await this.page.screenshot({ path: `screenshots/borrower_detail_fail_retry_${retry + 1}.png`, fullPage: true });
+        } catch (screenshotErr) {
+          console.log(`Failed to take screenshot: ${screenshotErr}`);
+        }
+        
+        // If we were redirected away from the borrower detail page, navigate back
+        const currentUrl = this.page.url();
+        if (!currentUrl.includes('/borrow-detail/')) {
+          console.log(`[Borrower] Redirected away from borrower detail page to ${currentUrl}. Navigating back to ${loanUrl}...`);
+          await this.page.goto(loanUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+        } else {
+          console.log(`[Borrower] Still on borrow detail page. Performing reload...`);
+          await this.page.reload().catch(() => {});
         }
       }
     }
@@ -225,6 +265,10 @@ export class BorrowerDetailPage extends BasePage {
 
   async closeRepaymentResult(): Promise<void> {
     const okayButton = this.page.getByRole('button', { name: 'Okay.' }).filter({ visible: true }).first();
-    await okayButton.click();
+    if (await okayButton.isVisible().catch(() => false)) {
+      await okayButton.click();
+    }
+    await this.page.locator('.modal').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+    await this.page.locator('.modal-backdrop').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
   }
 }

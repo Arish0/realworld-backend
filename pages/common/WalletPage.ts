@@ -9,7 +9,7 @@ export class WalletPage extends BasePage {
         const softLink = this.page.locator('a[href="/my-wallet"]').or(this.page.locator('a[routerlink="/my-wallet"]')).first();
         if (await softLink.isVisible().catch(() => false)) {
           console.log(`[Wallet] Navigating to wallet softly...`);
-          await softLink.click();
+          await softLink.click({ timeout: 5000 });
         } else {
           console.log(`[Wallet] Soft navigation link not found. Performing hard navigation...`);
           await this.goto(ROUTES.wallet);
@@ -124,9 +124,7 @@ export class WalletPage extends BasePage {
     for (let retry = 0; retry < 5; retry++) {
       try {
         const availableTab = this.page.locator(walletLocators.availableTab).first();
-        if (await availableTab.isVisible({ timeout: 5000 }).catch(() => false)) {
-          await availableTab.click();
-        }
+        await availableTab.click({ timeout: 5000 });
         await this.waitForAssets({ timeout: 15000 });
         return;
       } catch (e) {
@@ -141,9 +139,7 @@ export class WalletPage extends BasePage {
     for (let retry = 0; retry < 5; retry++) {
       try {
         const negotiationTab = this.page.locator(walletLocators.negotiationTab).first();
-        if (await negotiationTab.isVisible({ timeout: 5000 }).catch(() => false)) {
-          await negotiationTab.click();
-        }
+        await negotiationTab.click({ timeout: 5000 });
         await this.waitForAssets({ timeout: 15000 });
         return;
       } catch (e) {

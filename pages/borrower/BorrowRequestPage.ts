@@ -148,7 +148,8 @@ export class BorrowRequestPage extends BasePage {
     await this.page.waitForTimeout(3000);
 
     const confirmButton = this.page.getByRole('button', { name: /^Confirm\.?$/ }).filter({ visible: true }).last();
-    if (!(await confirmButton.isVisible({ timeout: 3000 }).catch(() => false))) {
+    const isConfirmVisible = await confirmButton.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
+    if (!isConfirmVisible) {
       await requestButton.evaluate((button: HTMLElement) => button.click());
     }
   }
@@ -193,10 +194,12 @@ export class BorrowRequestPage extends BasePage {
   }
 
   async closeLoanRequestedSuccess(): Promise<void> {
-    const okayButton = this.page.getByRole('button', { name: 'Okay.' });
+    const okayButton = this.page.getByRole('button', { name: 'Okay.' }).filter({ visible: true }).first();
     if (await okayButton.isVisible().catch(() => false)) {
       await okayButton.click();
     }
+    await this.page.locator('.modal').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+    await this.page.locator('.modal-backdrop').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
   }
 
   async openLiveBorrowing(): Promise<void> {
@@ -212,7 +215,8 @@ export class BorrowRequestPage extends BasePage {
   async openFirstLiveBorrowingLoan(): Promise<boolean> {
     await this.openLiveBorrowing();
     const firstLoan = this.page.locator(borrowLocators.liveBorrowingLoanCards).first();
-    if (!(await firstLoan.isVisible({ timeout: 5000 }).catch(() => false))) {
+    const isFirstLoanVisible = await firstLoan.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
+    if (!isFirstLoanVisible) {
       return false;
     }
 
@@ -233,7 +237,12 @@ export class BorrowRequestPage extends BasePage {
   }
 
   async closeLoanCancelledSuccess(): Promise<void> {
-    await this.page.getByRole('button', { name: 'Okay.' }).click();
+    const okayButton = this.page.getByRole('button', { name: 'Okay.' }).filter({ visible: true }).first();
+    if (await okayButton.isVisible().catch(() => false)) {
+      await okayButton.click();
+    }
+    await this.page.locator('.modal').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+    await this.page.locator('.modal-backdrop').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
   }
 
   async waitForLoanCancellationResult(): Promise<boolean> {
@@ -256,14 +265,16 @@ export class BorrowRequestPage extends BasePage {
 
   private async clickIfVisible(locator: string): Promise<void> {
     const element = this.page.locator(locator).first();
-    if (await element.isVisible({ timeout: 3000 }).catch(() => false)) {
+    const visible = await element.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
+    if (visible) {
       await element.click();
     }
   }
 
   private async clickListItemIfVisible(name: string): Promise<void> {
     const element = this.page.getByRole('listitem', { name, exact: true }).last();
-    if (await element.isVisible({ timeout: 3000 }).catch(() => false)) {
+    const visible = await element.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
+    if (visible) {
       await element.click();
     }
   }

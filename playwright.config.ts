@@ -1,4 +1,4 @@
-﻿import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
 
 /**
  * Read environment variables from file.
@@ -32,21 +32,23 @@ export default defineConfig({
     baseURL: process.env.BASE_URL ?? 'https://stagingmarket.realworld.fi',
 
     trace: 'off',
-    headless: true,
-    screenshot: 'off',
+    headless: process.env.CI ? true : false,
+    screenshot: 'only-on-failure',
     video: 'off',
     launchOptions: {
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-extensions',
-        '--disable-background-networking',
-        '--disable-background-timer-throttling',
-        '--disable-renderer-backgrounding',
-        '--single-process',
-      ],
+      args: process.env.CI
+        ? [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-extensions',
+            '--disable-background-networking',
+            '--disable-background-timer-throttling',
+            '--disable-renderer-backgrounding',
+            '--single-process',
+          ]
+        : [],
     },
   },
 

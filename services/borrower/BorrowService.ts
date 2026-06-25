@@ -68,17 +68,20 @@ export class BorrowService {
         await aprInput.type(currentApr);
 
         const advancedButton = this.page.locator('button.viewoption-btn').or(this.page.getByRole('button', { name: /Advanced options/i })).first();
-        if (await advancedButton.isVisible({ timeout: 5000 }).catch(() => false)) {
+        const advancedVisible = await advancedButton.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
+        if (advancedVisible) {
           await advancedButton.click();
           await this.page.waitForTimeout(500);
         }
 
         const endOfLoanItem = this.page.locator('xpath=//li[normalize-space()="End of loan." or normalize-space()="End of loan"]').last();
-        if (await endOfLoanItem.isVisible({ timeout: 3000 }).catch(() => false)) {
+        const endOfLoanVisible = await endOfLoanItem.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
+        if (endOfLoanVisible) {
           await endOfLoanItem.click();
         }
         const yesItem = this.page.locator('xpath=//li[normalize-space()="Yes." or normalize-space()="Yes"]').last();
-        if (await yesItem.isVisible({ timeout: 3000 }).catch(() => false)) {
+        const yesVisible = await yesItem.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
+        if (yesVisible) {
           await yesItem.click();
         }
 
@@ -237,11 +240,14 @@ export class BorrowService {
     await walletPage.open();
     await walletPage.openNegotiationAssets();
 
-    if ((await walletPage.nftCount()) === 0) {
+    const negotiationCard = this.page.locator('#cards > div').filter({ hasText: 'Negotiation' }).first();
+    if (!(await negotiationCard.isVisible({ timeout: 5000 }).catch(() => false))) {
+      console.log('[CLEANUP] No pending negotiation cards found.');
       return false;
     }
 
-    await walletPage.openNftCard(0);
+    console.log('[CLEANUP] Found pending negotiation card. Clicking it...');
+    await negotiationCard.click();
     await borrowerDetailPage.waitForPageLoaded();
     await borrowRequestPage.cancelLoanRequest();
     await borrowRequestPage.waitForLoanCancelledSuccess();

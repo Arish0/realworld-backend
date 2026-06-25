@@ -123,7 +123,12 @@ export class RefinanceRequestPage extends BasePage {
   }
 
   async closeUpdateResult(): Promise<void> {
-    await this.page.getByRole('button', { name: 'Okay.' }).click();
+    const okayButton = this.page.getByRole('button', { name: 'Okay.' }).filter({ visible: true }).first();
+    if (await okayButton.isVisible().catch(() => false)) {
+      await okayButton.click();
+    }
+    await this.page.locator('.modal').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+    await this.page.locator('.modal-backdrop').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
   }
 
   async updateAndConfirm(options: LoanRequestOptions): Promise<void> {

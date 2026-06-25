@@ -42,11 +42,31 @@ async function dismissResultOrBackdrop(page: Page): Promise<void> {
   await page.locator('.modal-backdrop').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
 }
 
+async function ensureBorrowerLoggedIn(page: Page, email: string, pass: string): Promise<void> {
+  const isLoginPage = page.url().includes('/sign-in') || page.url().includes('/login');
+  const headerLoginBtn = page.getByRole('button', { name: /Log in/i })
+    .or(page.locator('button:has-text("Log in")'))
+    .or(page.locator('a:has-text("Log in")'))
+    .or(page.locator('text=Log in.'))
+    .filter({ visible: true })
+    .first();
+  const isHeaderLoginVisible = await headerLoginBtn.isVisible().catch(() => false);
+
+  if (isLoginPage || isHeaderLoginVisible) {
+    console.log('[BORROWER SESSION] Detected logged-out state. Logging back in...');
+    const loginPageObj = new LoginPage(page);
+    await loginPageObj.open();
+    await loginPageObj.login(email, pass);
+    console.log('[BORROWER SESSION] Logged in successfully.');
+  }
+}
+
 async function readNftNameFromDetail(page: Page, nftId: string): Promise<string> {
   const title = page.locator('h1').filter({ hasText: /\S/ }).first();
-  if (await title.isVisible({ timeout: 30000 }).catch(() => false)) {
+  const isTitleVisible = await title.waitFor({ state: 'visible', timeout: 30000 }).then(() => true).catch(() => false);
+  if (isTitleVisible) {
     const value = (await title.innerText()).replace(/\s+/g, ' ').trim();
-    if (value) return value;
+    if (value) return value.replace(/\.+$/, '');
   }
 
   const tokenId = nftId.split('/').pop() || nftId;
@@ -57,16 +77,115 @@ async function openDirectNftLoanForm(
   page: Page,
   borrowRequestPage: BorrowRequestPage,
   nftId: string,
+  borrowerEmail?: string,
+  borrowerPassword?: string,
 ): Promise<string> {
   const detailUrl = `https://stagingmarket.realworld.fi/nft-detail/${nftId}`;
   console.log(`[DIRECT NFT] Opening NFT detail page: ${detailUrl}`);
   await page.goto(detailUrl, { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
 
+  if (borrowerEmail && borrowerPassword) {
+    await ensureBorrowerLoggedIn(page, borrowerEmail, borrowerPassword);
+    if (!page.url().includes(`/nft-detail/${nftId}`)) {
+      console.log(`[DIRECT NFT] Navigating back to NFT detail page: ${detailUrl}`);
+      await page.goto(detailUrl, { waitUntil: 'domcontentloaded' });
+      await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    }
+  }
+
+  // Ensure mock wallet is connected on this direct detail page load
+  const walletAddress = page.locator('[data-testid="wallet-address"]').first();
+  const isConnected = await walletAddress.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
+  if (!isConnected) {
+    console.log('[DIRECT NFT] Wallet not connected automatically. Clicking connect button...');
+    const connectBtn = page.locator('[data-testid="connect-wallet"]')
+      .or(page.getByRole('button', { name: /Connect wallet/i }))
+      .or(page.locator('text=Connect Wallet'))
+      .or(page.locator('text=Connect wallet'))
+      .filter({ visible: true })
+      .first();
+    const connectBtnVisible = await connectBtn.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
+    if (connectBtnVisible) {
+      await connectBtn.click();
+      await walletAddress.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+    }
+  }
+
   const assetName = await readNftNameFromDetail(page, nftId);
   console.log(`[DIRECT NFT] Resolved collateral name: "${assetName}"`);
 
-  const embeddedFormVisible = await page.getByText(/Loan amount requested/i).first().isVisible({ timeout: 5000 }).catch(() => false);
+  // Self-heal: If a leftover pending or active loan is present, cancel/repay it
+  const viewDetailsBtn = page.getByRole('button', { name: /View loan details/i }).filter({ visible: true }).first();
+  if (await viewDetailsBtn.isVisible().catch(() => false)) {
+    console.log(`[DIRECT NFT] Leftover pending/active loan detected! Clicking View loan details...`);
+    await viewDetailsBtn.click();
+    
+    // Wait for redirect to happen
+    await expect(page).toHaveURL(/\/(borrow-detail|lending-detail)\//, { timeout: 30000 });
+    console.log(`[DIRECT NFT] Current URL after clicking view details: ${page.url()}`);
+
+    const borrowerDetailPage = new BorrowerDetailPage(page);
+    
+    const connectBtn = page.locator('[data-testid="connect-wallet"]')
+      .or(page.getByRole('button', { name: /Connect wallet/i }))
+      .or(page.locator('text=Connect Wallet'))
+      .or(page.locator('text=Connect wallet'));
+
+    const cancelBtn = page.locator('button.cancel_loan').first();
+    const repayBtn = page.locator('button.repay_loan')
+      .or(page.getByRole('button', { name: /Pay Full Balance/i }))
+      .or(page.locator('button:has-text("Pay Full Balance")'))
+      .first();
+
+    // Wait up to 30s for one of these elements to be visible
+    await expect(cancelBtn.or(repayBtn).or(connectBtn)).toBeVisible({ timeout: 30000 });
+
+    if (await connectBtn.first().isVisible().catch(() => false)) {
+      console.log(`[DIRECT NFT] Connect wallet button visible. Clicking connect...`);
+      await connectBtn.first().click();
+      await page.waitForTimeout(2000);
+    }
+
+    // Wait for cancel or repay button to be visible
+    await expect(cancelBtn.or(repayBtn)).toBeVisible({ timeout: 30000 });
+
+    if (await cancelBtn.isVisible().catch(() => false)) {
+      console.log(`[DIRECT NFT] Leftover pending loan request is present. Cancelling...`);
+      await borrowRequestPage.cancelLoanRequest();
+      await borrowRequestPage.waitForLoanCancelledSuccess();
+      await borrowRequestPage.closeLoanCancelledSuccess();
+      console.log(`[DIRECT NFT] Leftover pending loan request cancelled successfully.`);
+    } else if (await repayBtn.isVisible().catch(() => false)) {
+      console.log(`[DIRECT NFT] Leftover active/funded loan is present. Repaying to free up the NFT...`);
+      const payInterestButton = page.locator("//button[@class='repay_loan mb-2 bg_btn ng-star-inserted']")
+        .or(page.getByRole('button', { name: /Pay Monthly Interest/i }))
+        .or(page.locator('button:has-text("Pay Monthly Interest")'))
+        .filter({ visible: true })
+        .first();
+      if (await payInterestButton.isVisible().catch(() => false)) {
+        console.log(`[DIRECT NFT] Monthly interest button visible. Paying interest first...`);
+        await borrowerDetailPage.repayMonthlyInterest();
+        await borrowerDetailPage.waitForRepaymentResult().catch(() => {});
+        await borrowerDetailPage.closeRepaymentResult().catch(() => {});
+        await page.waitForTimeout(3000);
+      }
+
+      console.log(`[DIRECT NFT] Repaying full balance...`);
+      await borrowerDetailPage.repayLoan();
+      const repaySuccess = await borrowerDetailPage.waitForRepaymentResult();
+      await borrowerDetailPage.closeRepaymentResult();
+      console.log(`[DIRECT NFT] Repayment result: ${repaySuccess}`);
+    } else {
+      console.log(`[DIRECT NFT] Warning: neither cancel button nor repay button was found on the borrower detail page.`);
+    }
+    
+    console.log(`[DIRECT NFT] Leftover cleanup complete. Returning to NFT detail page...`);
+    await page.goto(detailUrl, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+  }
+
+  const embeddedFormVisible = await page.getByText(/Loan amount requested/i).first().waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
   if (!embeddedFormVisible) {
     const requestLoanAction = page
       .getByRole('tab', { name: /Make Loan Offer/i })
@@ -104,13 +223,15 @@ async function createDirectLoanRequestWithRetry(
   nftId: string,
   phase: RepaymentPhase,
   options: LoanRequestOptions,
+  borrowerEmail?: string,
+  borrowerPassword?: string,
 ): Promise<string> {
   let lastError = '';
 
-  for (let attempt = 1; attempt <= 4; attempt += 1) {
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
-      console.log(`[DIRECT NFT] Phase ${phase.phaseNum}: loan request attempt ${attempt}/4 for ${nftId}`);
-      const assetName = await openDirectNftLoanForm(page, borrowRequestPage, nftId);
+      console.log(`[DIRECT NFT] Phase ${phase.phaseNum}: loan request attempt ${attempt}/2 for ${nftId}`);
+      const assetName = await openDirectNftLoanForm(page, borrowRequestPage, nftId, borrowerEmail, borrowerPassword);
       const success = await submitConfiguredLoanRequest(borrowRequestPage, options);
 
       if (success) {
@@ -122,16 +243,16 @@ async function createDirectLoanRequestWithRetry(
       console.log(`[DIRECT NFT] Phase ${phase.phaseNum}: loan request failed on attempt ${attempt}.`);
     } catch (err: any) {
       lastError = err?.message || String(err);
-      console.log(`[DIRECT NFT] Phase ${phase.phaseNum}: loan request attempt ${attempt}/4 threw: ${lastError}`);
+      console.log(`[DIRECT NFT] Phase ${phase.phaseNum}: loan request attempt ${attempt}/2 threw: ${lastError}`);
     }
 
     await dismissResultOrBackdrop(page);
-    if (attempt < 4) {
+    if (attempt < 2) {
       await page.waitForTimeout(5000);
     }
   }
 
-  throw new Error(`[DIRECT NFT] Phase ${phase.phaseNum}: loan request failed after 4 attempts. Last error: ${lastError}`);
+  throw new Error(`[DIRECT NFT] Phase ${phase.phaseNum}: loan request failed after 2 attempts. Last error: ${lastError}`);
 }
 
 async function captureLoanIdFromWallet(
@@ -163,7 +284,7 @@ async function acceptLoanWithRetry(
 ): Promise<void> {
   let lastError = '';
 
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
     const lenderContext = await browser.newContext();
     const lenderPage = await lenderContext.newPage();
     lenderPage.on('console', msg => console.log(`[LENDER CONSOLE] ${msg.type()}: ${msg.text()}`));
@@ -181,7 +302,7 @@ async function acceptLoanWithRetry(
     });
 
     try {
-      console.log(`[Lender] Phase ${phaseNum}: accepting loan ${loanId}, attempt ${attempt}/3...`);
+      console.log(`[Lender] Phase ${phaseNum}: accepting loan ${loanId}, attempt ${attempt}/2...`);
       const lenderLoginPage = new LoginPage(lenderPage);
       await lenderLoginPage.open();
       await lenderLoginPage.login(lenderEmail, lenderPassword);
@@ -203,20 +324,20 @@ async function acceptLoanWithRetry(
       }
 
       lastError = 'Application returned a failed lending result.';
-      console.log(`[Lender] Phase ${phaseNum}: lending failed on attempt ${attempt}/3.`);
+      console.log(`[Lender] Phase ${phaseNum}: lending failed on attempt ${attempt}/2.`);
     } catch (err: any) {
       lastError = err?.message || String(err);
-      console.log(`[Lender] Phase ${phaseNum}: lending attempt ${attempt}/3 threw: ${lastError}`);
+      console.log(`[Lender] Phase ${phaseNum}: lending attempt ${attempt}/2 threw: ${lastError}`);
     } finally {
       await lenderContext.close().catch(() => {});
     }
 
-    if (attempt < 3) {
+    if (attempt < 2) {
       await new Promise(resolve => setTimeout(resolve, 5000));
     }
   }
 
-  throw new Error(`[Lender] Phase ${phaseNum}: loan ${loanId} failed to lend after 3 attempts. Last error: ${lastError}`);
+  throw new Error(`[Lender] Phase ${phaseNum}: loan ${loanId} failed to lend after 2 attempts. Last error: ${lastError}`);
 }
 
 test.describe('Borrower loan repayment flows', () => {
@@ -228,19 +349,89 @@ test.describe('Borrower loan repayment flows', () => {
   }) => {
     test.setTimeout(1800000);
 
+    let capturedLoanId: string | null = null;
+    const excludedUserIds = new Set<string>([
+      '6a195238909b2903456069bb', // brooklyn user ID
+      '69e203895dbd1b634136e1ed', // harish user ID
+    ]);
+
     page.on('console', msg => console.log(`[BORROWER CONSOLE] ${msg.type()}: ${msg.text()}`));
     page.on('pageerror', err => console.log(`[BORROWER PAGE ERROR] ${err.message}`));
     page.on('response', async response => {
       const status = response.status();
+      const url = response.url();
+      if (url.includes('/api/v3/market-place/')) {
+        try {
+          const method = response.request().method();
+          const body = await response.text();
+          console.log(`[BORROWER API RESPONSE] ${method} ${url} -> Status ${status} -> Body: ${body.slice(0, 1000)}`);
+          
+          // Capture user IDs to exclude them from loan IDs
+          if ((url.includes('/auth/me') || url.includes('/sign-in') || url.includes('/regulated-sign-in')) && (status === 200 || status === 201)) {
+            try {
+              const data = JSON.parse(body);
+              const userId = data.data?._id || data.data?.id || data._id || data.id;
+              if (userId && /^[a-fA-F0-9]{24}$/.test(userId)) {
+                excludedUserIds.add(userId);
+                console.log(`[NETWORK CAPTURE] Added user ID to exclusion list: ${userId}`);
+              }
+            } catch (e) {}
+          }
+
+          // 1. Precise loan request creation capture (POST /loan-request)
+          if (url.endsWith('/loan-request') && method === 'POST' && (status === 200 || status === 201)) {
+            try {
+              const data = JSON.parse(body);
+              const loanId = data.data?._id || data.data?.id || data._id || data.id;
+              if (loanId && /^[a-fA-F0-9]{24}$/.test(loanId)) {
+                console.log(`[NETWORK CAPTURE] Captured loan ID from POST loan-request response: ${loanId}`);
+                capturedLoanId = loanId;
+                return;
+              }
+            } catch (e) {}
+          }
+
+          // 2. Precise active negotiation list fetch or bids fetch capture
+          if ((url.includes('/bids-for-loan-request') || url.includes('/loan-request/detail') || url.includes('/live-borrowing-list')) && method === 'GET') {
+            try {
+              const parsedUrl = new URL(url);
+              const idParam = parsedUrl.searchParams.get('id') || parsedUrl.searchParams.get('loanId');
+              if (idParam && /^[a-fA-F0-9]{24}$/.test(idParam)) {
+                if (!excludedUserIds.has(idParam)) {
+                  console.log(`[NETWORK CAPTURE] Captured loan ID from GET parameter: ${idParam}`);
+                  capturedLoanId = idParam;
+                  return;
+                }
+              }
+            } catch (e) {}
+          }
+
+          // 3. Fallback matching parameter 'id' for bids or loan endpoints
+          if (url.includes('id=') && (url.includes('bid') || url.includes('loan') || url.includes('borrow') || url.includes('lending'))) {
+            try {
+              const parsedUrl = new URL(url);
+              const idParam = parsedUrl.searchParams.get('id');
+              if (idParam && /^[a-fA-F0-9]{24}$/.test(idParam)) {
+                if (!excludedUserIds.has(idParam)) {
+                  console.log(`[NETWORK CAPTURE] Captured loan ID from query fallback: ${idParam}`);
+                  capturedLoanId = idParam;
+                  return;
+                }
+              }
+            } catch (e) {}
+          }
+        } catch (e) {}
+      }
       if (status >= 400) {
         try {
           const body = await response.text();
-          console.log(`[BORROWER HTTP ERROR] ${response.request().method()} ${response.url()} -> Status ${status} -> Body: ${body}`);
+          console.log(`[BORROWER HTTP ERROR] ${response.request().method()} ${url} -> Status ${status} -> Body: ${body}`);
         } catch (e) {
-          console.log(`[BORROWER HTTP ERROR] ${response.request().method()} ${response.url()} -> Status ${status} (could not read body)`);
+          console.log(`[BORROWER HTTP ERROR] ${response.request().method()} ${url} -> Status ${status} (could not read body)`);
         }
       }
     });
+
 
     const uiConfig = readUiConfig();
     const borrowerEmailVal = process.env.REALWORLD_WEB2_EMAIL || uiConfig.borrowerEmail || 'brooklyn@yopmail.com';
@@ -263,6 +454,15 @@ test.describe('Borrower loan repayment flows', () => {
     await expect(page).toHaveURL(/\/(dashboard|my-wallet)/, { timeout: 30000 });
     await walletPage.open();
 
+    const borrowService = new BorrowService(page);
+    console.log('[CLEANUP] Attempting to cancel any leftover negotiation request to free up the NFT...');
+    const cancelled = await borrowService.cancelFirstWalletLoanRequestIfPresent(walletPage).catch(() => false);
+    if (cancelled) {
+      console.log('[CLEANUP] Cancelled leftover negotiation request. Waiting 10 seconds for blockchain sync...');
+      await page.waitForTimeout(10000);
+      await walletPage.open();
+    }
+
     const borrowRequestPage = new BorrowRequestPage(page);
     const borrowerDetailPage = new BorrowerDetailPage(page);
 
@@ -275,21 +475,29 @@ test.describe('Borrower loan repayment flows', () => {
       { phaseNum: 6, earlyRepayment: 'No', interestRepayment: 'End of loan', payMonthlyFirst: false },
     ];
 
-    const borrowService = new BorrowService(page);
+
     let assetName = '';
     let assetAppraisal = '';
     let phase1Success = false;
-    const MAX_CYCLES = 3;
+    const MAX_CYCLES = 2;
 
     if (configuredNftId) {
-      assetName = await createDirectLoanRequestWithRetry(page, borrowRequestPage, configuredNftId, phases[0], {
-        loanAmount: configuredLoanAmount,
-        currency: '$RW',
-        durationDays: configuredDuration,
-        apr: configuredApr,
-        interestRepayment: phases[0].interestRepayment,
-        allowEarlyRepayment: phases[0].earlyRepayment,
-      });
+      assetName = await createDirectLoanRequestWithRetry(
+        page,
+        borrowRequestPage,
+        configuredNftId,
+        phases[0],
+        {
+          loanAmount: configuredLoanAmount,
+          currency: '$RW',
+          durationDays: configuredDuration,
+          apr: configuredApr,
+          interestRepayment: phases[0].interestRepayment,
+          allowEarlyRepayment: phases[0].earlyRepayment,
+        },
+        borrowerEmailVal,
+        borrowerPasswordVal,
+      );
       assetAppraisal = 'unknown';
       phase1Success = true;
     } else {
@@ -386,19 +594,29 @@ test.describe('Borrower loan repayment flows', () => {
       if (phase.phaseNum === 1) {
         console.log('Phase 1 loan request already created during NFT setup.');
       } else if (configuredNftId) {
-        assetName = await createDirectLoanRequestWithRetry(page, borrowRequestPage, configuredNftId, phase, {
-          loanAmount: configuredLoanAmount,
-          currency: '$RW',
-          durationDays: configuredDuration,
-          apr: configuredApr,
-          interestRepayment: phase.interestRepayment,
-          allowEarlyRepayment: phase.earlyRepayment,
-        });
+        capturedLoanId = null;
+        assetName = await createDirectLoanRequestWithRetry(
+          page,
+          borrowRequestPage,
+          configuredNftId,
+          phase,
+          {
+            loanAmount: configuredLoanAmount,
+            currency: '$RW',
+            durationDays: configuredDuration,
+            apr: configuredApr,
+            interestRepayment: phase.interestRepayment,
+            allowEarlyRepayment: phase.earlyRepayment,
+          },
+          borrowerEmailVal,
+          borrowerPasswordVal,
+        );
       } else {
         await walletPage.open();
         await walletPage.requestLoanForNftByNameAndAppraisal(assetName, assetAppraisal);
         await borrowRequestPage.waitForLoanForm();
 
+        capturedLoanId = null;
         await submitConfiguredLoanRequest(borrowRequestPage, {
           loanAmount: configuredLoanAmount,
           currency: '$RW',
@@ -409,15 +627,37 @@ test.describe('Borrower loan repayment flows', () => {
         });
       }
 
-      const loanId = await captureLoanIdFromWallet(page, walletPage, borrowerDetailPage, assetName);
+      // Wait for the captured loan ID with a timeout
+      let loanId = capturedLoanId;
+      if (!loanId) {
+        console.log(`[CAPTURE] Loan ID not captured via network interception. Waiting a few seconds...`);
+        for (let i = 0; i < 15 && !loanId; i++) {
+          await page.waitForTimeout(1000);
+          loanId = capturedLoanId;
+        }
+      }
+
+      if (!loanId) {
+        console.log(`[CAPTURE] Warning: Loan ID still not captured. Falling back to wallet-based URL extraction...`);
+        loanId = await captureLoanIdFromWallet(page, walletPage, borrowerDetailPage, assetName);
+      } else {
+        console.log(`[CAPTURE] Successfully captured loan ID via network interception: ${loanId}`);
+      }
+
       console.log(`Phase ${phase.phaseNum} Loan ID: ${loanId}`);
 
       await acceptLoanWithRetry(browser, loanId, phase.phaseNum, lenderEmailVal, lenderPasswordVal);
 
       await page.bringToFront();
-      await walletPage.open();
-      await walletPage.openNegotiationAssets();
-      await walletPage.openNftCardByName(assetName);
+      console.log(`[Borrower] Phase ${phase.phaseNum}: Navigating directly to borrower detail page for loan ${loanId}`);
+      await borrowerDetailPage.open(loanId);
+      
+      await ensureBorrowerLoggedIn(page, borrowerEmailVal, borrowerPasswordVal);
+      if (!page.url().includes(`/borrow-detail/${loanId}`)) {
+        console.log(`[Borrower] Re-navigating to borrower detail page after login...`);
+        await borrowerDetailPage.open(loanId);
+      }
+      
       await borrowerDetailPage.waitForPageLoaded();
 
       if (phase.payMonthlyFirst) {
