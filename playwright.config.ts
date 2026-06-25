@@ -46,7 +46,6 @@ export default defineConfig({
             '--disable-background-networking',
             '--disable-background-timer-throttling',
             '--disable-renderer-backgrounding',
-            '--single-process',
           ]
         : [],
     },
