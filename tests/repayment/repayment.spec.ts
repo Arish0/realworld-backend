@@ -1,5 +1,5 @@
 import { test, expect } from '../../fixtures/testFixture';
-import type { Browser, Page } from '@playwright/test';
+import type { Browser, Page, BrowserContext } from '@playwright/test';
 import { BorrowService } from '../../services/borrower/BorrowService';
 import { LoginPage } from '../../pages/common/LoginPage';
 import { BorrowerDetailPage } from '../../pages/borrower/BorrowerDetailPage';
@@ -228,9 +228,9 @@ async function createDirectLoanRequestWithRetry(
 ): Promise<string> {
   let lastError = '';
 
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
     try {
-      console.log(`[DIRECT NFT] Phase ${phase.phaseNum}: loan request attempt ${attempt}/2 for ${nftId}`);
+      console.log(`[DIRECT NFT] Phase ${phase.phaseNum}: loan request attempt ${attempt}/4 for ${nftId}`);
       const assetName = await openDirectNftLoanForm(page, borrowRequestPage, nftId, borrowerEmail, borrowerPassword);
       const success = await submitConfiguredLoanRequest(borrowRequestPage, options);
 
@@ -240,19 +240,19 @@ async function createDirectLoanRequestWithRetry(
       }
 
       lastError = 'Application returned a failed loan request result.';
-      console.log(`[DIRECT NFT] Phase ${phase.phaseNum}: loan request failed on attempt ${attempt}.`);
+      console.log(`[DIRECT NFT] Phase ${phase.phaseNum}: loan request failed on attempt ${attempt}/4.`);
     } catch (err: any) {
       lastError = err?.message || String(err);
-      console.log(`[DIRECT NFT] Phase ${phase.phaseNum}: loan request attempt ${attempt}/2 threw: ${lastError}`);
+      console.log(`[DIRECT NFT] Phase ${phase.phaseNum}: loan request attempt ${attempt}/4 threw: ${lastError}`);
     }
 
     await dismissResultOrBackdrop(page);
-    if (attempt < 2) {
-      await page.waitForTimeout(5000);
+    if (attempt < 4) {
+      await page.waitForTimeout(1000);
     }
   }
 
-  throw new Error(`[DIRECT NFT] Phase ${phase.phaseNum}: loan request failed after 2 attempts. Last error: ${lastError}`);
+  throw new Error(`[DIRECT NFT] Phase ${phase.phaseNum}: loan request failed after 4 attempts. Last error: ${lastError}`);
 }
 
 async function captureLoanIdFromWallet(
@@ -275,8 +275,39 @@ async function captureLoanIdFromWallet(
   return loanId;
 }
 
+async function ensureLenderLoggedIn(page: Page, email: string, pass: string): Promise<void> {
+  let currentUrl = page.url();
+  if (currentUrl === 'about:blank') {
+    console.log('[LENDER SESSION] Initial blank page detected. Navigating to login page to check session...');
+    const loginPageObj = new LoginPage(page);
+    await loginPageObj.open();
+    await page.waitForURL(/\/(dashboard|my-wallet|lend|sign-in|login)/, { timeout: 10000 }).catch(() => {});
+    currentUrl = page.url();
+  }
+
+  const isLoginPage = currentUrl.includes('/sign-in') || currentUrl.includes('/login');
+  const headerLoginBtn = page.getByRole('button', { name: /Log in/i })
+    .or(page.locator('button:has-text("Log in")'))
+    .or(page.locator('a:has-text("Log in")'))
+    .or(page.locator('text=Log in.'))
+    .filter({ visible: true })
+    .first();
+  const isHeaderLoginVisible = await headerLoginBtn.isVisible().catch(() => false);
+
+  if (isLoginPage || isHeaderLoginVisible) {
+    console.log('[LENDER SESSION] Detected logged-out state. Logging back in...');
+    const loginPageObj = new LoginPage(page);
+    await loginPageObj.open();
+    await loginPageObj.login(email, pass);
+    await expect(page).toHaveURL(/\/(dashboard|my-wallet|lend)/, { timeout: 30000 });
+    console.log('[LENDER SESSION] Logged in successfully.');
+  } else {
+    console.log('[LENDER SESSION] Already logged in (session active).');
+  }
+}
+
 async function acceptLoanWithRetry(
-  browser: Browser,
+  lenderPage: Page,
   loanId: string,
   phaseNum: number,
   lenderEmail: string,
@@ -284,29 +315,11 @@ async function acceptLoanWithRetry(
 ): Promise<void> {
   let lastError = '';
 
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    const lenderContext = await browser.newContext();
-    const lenderPage = await lenderContext.newPage();
-    lenderPage.on('console', msg => console.log(`[LENDER CONSOLE] ${msg.type()}: ${msg.text()}`));
-    lenderPage.on('pageerror', err => console.log(`[LENDER PAGE ERROR] ${err.message}`));
-    lenderPage.on('response', async response => {
-      const status = response.status();
-      if (status >= 400) {
-        try {
-          const body = await response.text();
-          console.log(`[LENDER HTTP ERROR] ${response.request().method()} ${response.url()} -> Status ${status} -> Body: ${body}`);
-        } catch (e) {
-          console.log(`[LENDER HTTP ERROR] ${response.request().method()} ${response.url()} -> Status ${status} (could not read body)`);
-        }
-      }
-    });
-
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
     try {
-      console.log(`[Lender] Phase ${phaseNum}: accepting loan ${loanId}, attempt ${attempt}/2...`);
-      const lenderLoginPage = new LoginPage(lenderPage);
-      await lenderLoginPage.open();
-      await lenderLoginPage.login(lenderEmail, lenderPassword);
-      await expect(lenderPage).toHaveURL(/\/(dashboard|my-wallet|lend)/, { timeout: 30000 });
+      console.log(`[Lender] Phase ${phaseNum}: accepting loan ${loanId}, attempt ${attempt}/4...`);
+      await lenderPage.bringToFront().catch(() => {});
+      await ensureLenderLoggedIn(lenderPage, lenderEmail, lenderPassword);
 
       const lenderDetailPage = new LenderDetailPage(lenderPage);
       await lenderDetailPage.open(loanId);
@@ -319,25 +332,22 @@ async function acceptLoanWithRetry(
 
       if (lendSuccess) {
         console.log(`[Lender] Phase ${phaseNum}: loan ${loanId} accepted successfully on attempt ${attempt}.`);
-        await lenderContext.close();
         return;
       }
 
       lastError = 'Application returned a failed lending result.';
-      console.log(`[Lender] Phase ${phaseNum}: lending failed on attempt ${attempt}/2.`);
+      console.log(`[Lender] Phase ${phaseNum}: lending failed on attempt ${attempt}/4.`);
     } catch (err: any) {
       lastError = err?.message || String(err);
-      console.log(`[Lender] Phase ${phaseNum}: lending attempt ${attempt}/2 threw: ${lastError}`);
-    } finally {
-      await lenderContext.close().catch(() => {});
+      console.log(`[Lender] Phase ${phaseNum}: lending attempt ${attempt}/4 threw: ${lastError}`);
     }
 
-    if (attempt < 2) {
+    if (attempt < 4) {
       await new Promise(resolve => setTimeout(resolve, 5000));
     }
   }
 
-  throw new Error(`[Lender] Phase ${phaseNum}: loan ${loanId} failed to lend after 2 attempts. Last error: ${lastError}`);
+  throw new Error(`[Lender] Phase ${phaseNum}: loan ${loanId} failed to lend after 4 attempts. Last error: ${lastError}`);
 }
 
 test.describe('Borrower loan repayment flows', () => {
@@ -349,11 +359,15 @@ test.describe('Borrower loan repayment flows', () => {
   }) => {
     test.setTimeout(1800000);
 
-    let capturedLoanId: string | null = null;
-    const excludedUserIds = new Set<string>([
-      '6a195238909b2903456069bb', // brooklyn user ID
-      '69e203895dbd1b634136e1ed', // harish user ID
-    ]);
+    let lenderContext: BrowserContext | null = null;
+    let lenderPage: Page | null = null;
+
+    try {
+      let capturedLoanId: string | null = null;
+      const excludedUserIds = new Set<string>([
+        '6a195238909b2903456069bb', // brooklyn user ID
+        '69e203895dbd1b634136e1ed', // harish user ID
+      ]);
 
     page.on('console', msg => console.log(`[BORROWER CONSOLE] ${msg.type()}: ${msg.text()}`));
     page.on('pageerror', err => console.log(`[BORROWER PAGE ERROR] ${err.message}`));
@@ -438,10 +452,10 @@ test.describe('Borrower loan repayment flows', () => {
     const borrowerPasswordVal = process.env.REALWORLD_WEB2_PASSWORD || uiConfig.borrowerPassword || 'Test@1233333';
     const lenderEmailVal = process.env.REALWORLD_LENDER_EMAIL || uiConfig.lenderEmail || 'harish@yopmail.com';
     const lenderPasswordVal = process.env.REALWORLD_LENDER_PASSWORD || uiConfig.lenderPassword || 'Test@1233333';
-    const configuredLoanAmount = getLoanAmount(1000, 5000);
-    const configuredApr = getApr(10, 20);
-    const configuredDuration = getDuration(90);
-    const configuredNftId = normalizeNftId(uiConfig.nftId);
+    const configuredLoanAmount = process.env.LOAN_AMOUNT || getLoanAmount(1000, 5000);
+    const configuredApr = process.env.APR || getApr(10, 20);
+    const configuredDuration = process.env.DURATION ? parseInt(process.env.DURATION, 10) : getDuration(90);
+    const configuredNftId = normalizeNftId(process.env.NFT_ID || uiConfig.nftId);
 
     console.log(
       `[CONFIG] Repayment flow received borrower=${borrowerEmailVal}, lender=${lenderEmailVal}, ` +
@@ -646,7 +660,26 @@ test.describe('Borrower loan repayment flows', () => {
 
       console.log(`Phase ${phase.phaseNum} Loan ID: ${loanId}`);
 
-      await acceptLoanWithRetry(browser, loanId, phase.phaseNum, lenderEmailVal, lenderPasswordVal);
+      if (!lenderContext || !lenderPage) {
+        console.log(`[Lender] Creating persistent lender browser context and page...`);
+        lenderContext = await browser.newContext();
+        lenderPage = await lenderContext.newPage();
+        lenderPage.on('console', msg => console.log(`[LENDER CONSOLE] ${msg.type()}: ${msg.text()}`));
+        lenderPage.on('pageerror', err => console.log(`[LENDER PAGE ERROR] ${err.message}`));
+        lenderPage.on('response', async response => {
+          const status = response.status();
+          if (status >= 400) {
+            try {
+              const body = await response.text();
+              console.log(`[LENDER HTTP ERROR] ${response.request().method()} ${response.url()} -> Status ${status} -> Body: ${body}`);
+            } catch (e) {
+              console.log(`[LENDER HTTP ERROR] ${response.request().method()} ${response.url()} -> Status ${status} (could not read body)`);
+            }
+          }
+        });
+      }
+
+      await acceptLoanWithRetry(lenderPage, loanId, phase.phaseNum, lenderEmailVal, lenderPasswordVal);
 
       await page.bringToFront();
       console.log(`[Borrower] Phase ${phase.phaseNum}: Navigating directly to borrower detail page for loan ${loanId}`);
@@ -692,6 +725,12 @@ test.describe('Borrower loan repayment flows', () => {
       await expect(returnedCard.first()).toBeVisible({ timeout: 45000 });
       console.log(`Phase ${phase.phaseNum} complete! NFT successfully returned to Available assets.`);
     }
-  });
+  } finally {
+    if (lenderContext) {
+      console.log('[CLEANUP] Closing persistent lender browser context...');
+      await lenderContext.close().catch(() => {});
+    }
+  }
+});
 });
 
