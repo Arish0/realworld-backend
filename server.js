@@ -139,6 +139,7 @@ function publicRun(run) {
     htmlUrl: run.htmlUrl,
     logsUrl: run.logsUrl,
     artifacts: run.artifacts || [],
+    steps: run.steps || [],
     message: run.message,
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
@@ -187,6 +188,22 @@ async function refreshRun(run) {
   run.conclusion = workflowRun.conclusion;
   run.htmlUrl = workflowRun.html_url;
   run.logsUrl = workflowRun.logs_url;
+
+  // Retrieve workflow job steps in real-time
+  try {
+    const jobsData = await githubRequest(repoPath(`/actions/runs/${run.workflowRunId}/jobs`));
+    const jobs = jobsData.jobs || [];
+    if (jobs.length > 0) {
+      run.steps = jobs[0].steps.map(step => ({
+        name: step.name,
+        status: step.status,
+        conclusion: step.conclusion,
+      }));
+    }
+  } catch (err) {
+    console.error('Failed to retrieve workflow steps:', err);
+  }
+
   run.updatedAt = new Date().toISOString();
   return run;
 }
@@ -228,6 +245,16 @@ async function cancelRun(run) {
 }
 
 async function getRunLogs(run) {
+  if (run.liveLogs && run.liveLogs.length > 0) {
+    const fullText = run.liveLogs.join('\n');
+    const cleanLines = run.liveLogs.map(line => stripAnsi(line));
+    return {
+      summary: cleanLines.slice(-20).join('\n') || 'Running test...',
+      fullText,
+      files: [],
+    };
+  }
+
   if (!run.workflowRunId) {
     return { summary: 'Queueing...', fullText: 'Waiting for workflow run to start...', files: [] };
   }
@@ -398,6 +425,31 @@ const server = http.createServer(async (req, res) => {
       }
 
       json(res, 200, { success: true, ...publicRun(run) });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url?.startsWith('/test-logs/')) {
+      const runId = decodeURIComponent(req.url.replace('/test-logs/', ''));
+      const run = getRun(runId);
+      if (!run) {
+        json(res, 404, { success: false, message: 'Unknown run id' });
+        return;
+      }
+
+      const body = await readBody(req);
+      const text = body.text || '';
+      
+      if (!run.liveLogs) {
+        run.liveLogs = [];
+      }
+      run.liveLogs.push(text);
+      
+      // Broadcast to connected SSE clients
+      clients.forEach(client => {
+        client.write(`data: ${JSON.stringify({ text })}\n\n`);
+      });
+
+      json(res, 200, { success: true });
       return;
     }
 

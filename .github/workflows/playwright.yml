@@ -1,4 +1,4 @@
-﻿name: RealWorld Playwright
+name: RealWorld Playwright
 
 run-name: "RealWorld Playwright ${{ inputs.flow }} #${{ inputs.request_id }}"
 
@@ -69,7 +69,11 @@ jobs:
           echo "Spec: ${{ inputs.spec_file }}"
 
       - name: Run selected Playwright test
-        run: npx playwright test "${{ inputs.spec_file }}" --project=chromium --workers=1 --reporter=line
+        run: |
+          npx playwright test "${{ inputs.spec_file }}" --project=chromium --workers=1 --reporter=line 2>&1 | while IFS= read -r line; do
+            echo "$line"
+            curl -s -X POST -H "Content-Type: application/json" -d "{\"text\":$(echo "$line" | jq -R .)}" "https://realworld-backend-y89l.onrender.com/test-logs/${{ inputs.request_id }}" || true
+          done
 
       - name: Upload Playwright test results
         if: ${{ always() }}
